@@ -1,0 +1,61 @@
+/* ==========================================================================
+   FIREBASE CONFIG — Vivy AI
+   --------------------------------------------------------------------------
+   Replace the values below with your own Firebase project credentials.
+   Get them from: Firebase Console -> Project Settings -> General -> Your apps
+   This project uses the Firebase COMPAT SDK (loaded via <script> tags in
+   every HTML page) so it can run with zero build tools, directly on
+   GitHub Pages.
+   ========================================================================== */
+
+const firebaseConfig = {
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_PROJECT_ID.appspot.com",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId: "YOUR_APP_ID",
+  measurementId: "G-YOUR_MEASUREMENT_ID" // optional, used by Analytics
+};
+
+// Initialize Firebase (compat mode — works with plain <script> tags, no bundler)
+firebase.initializeApp(firebaseConfig);
+
+// Shared references used across every page
+const auth = firebase.auth();
+const db = firebase.firestore();
+const storage = firebase.storage();
+
+// Analytics is optional — only initialize if supported (avoids errors on
+// browsers/environments that block it, e.g. some in-app browsers).
+let analytics = null;
+try {
+  if (firebase.analytics && firebase.analytics.isSupported) {
+    firebase.analytics.isSupported().then((supported) => {
+      if (supported) analytics = firebase.analytics();
+    });
+  }
+} catch (e) {
+  console.warn("Analytics not available:", e.message);
+}
+
+/* --------------------------------------------------------------------------
+   AI PROVIDER CONFIG
+   --------------------------------------------------------------------------
+   Vivy AI never calls an AI provider with a secret key directly from the
+   browser (that would leak the key to every visitor). Instead, all AI
+   requests are sent to AI_ENDPOINT — a small serverless/cloud function
+   (Firebase Cloud Function, Cloudflare Worker, Vercel Edge Function, etc.)
+   that holds the real API key server-side and forwards the request to your
+   AI provider of choice (OpenAI, Anthropic, Gemini...).
+
+   Until you deploy that function, Vivy AI automatically falls back to a
+   local "offline mode" so every screen in this app is still fully usable
+   and demoable — see ai-fallback logic inside utils.js -> VivyAI.
+   ========================================================================== */
+const AI_CONFIG = {
+  endpoint: "https://YOUR-CLOUD-FUNCTION-URL/generate", // <-- set this
+  enabled: false, // flip to true once AI_CONFIG.endpoint is live
+  freeDailyLimit: 20, // messages/day for Free plan
+  premiumDailyLimit: Infinity
+};

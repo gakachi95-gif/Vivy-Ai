@@ -1,0 +1,15 @@
+{
+  "name": "Vivy AI - Personal Assistant",
+  "short_name": "Vivy AI",
+  "description": "Your premium AI personal assistant for chat, writing, summarizing, translating and brainstorming.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f0a1f",
+  "theme_color": "#8b5cf6",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
