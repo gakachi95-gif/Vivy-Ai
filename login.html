@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Sign In — Vivy AI</title>
+<meta name="theme-color" content="#8b5cf6">
+<link rel="manifest" href="manifest.json">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="auth-page">
+  <div class="glass-card auth-box">
+    <div class="auth-logo">
+      <div class="logo-mark">V</div>
+      <h1 class="gradient-text">Vivy AI</h1>
+    </div>
+    <h2 class="text-center mb-16">Welcome back</h2>
+
+    <form id="login-form" novalidate>
+      <div class="form-group">
+        <label class="form-label" for="email">Email</label>
+        <input class="form-input" type="email" id="email" placeholder="you@example.com" required>
+        <div class="field-error" id="email-error"></div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="password">Password</label>
+        <div class="input-wrap">
+          <input class="form-input" type="password" id="password" placeholder="••••••••" required minlength="6">
+          <span class="material-icons" id="toggle-password">visibility</span>
+        </div>
+        <div class="field-error" id="password-error"></div>
+      </div>
+
+      <div class="flex justify-between items-center mb-16">
+        <label class="form-check">
+          <input type="checkbox" id="remember-me" checked> Remember me
+        </label>
+        <a href="#" id="forgot-link" class="text-sm gradient-text">Forgot password?</a>
+      </div>
+
+      <button type="submit" class="btn btn-primary" id="login-btn">
+        <span id="login-btn-text">Sign In</span>
+      </button>
+    </form>
+
+    <div class="auth-divider">or continue with</div>
+
+    <button class="btn btn-google" id="google-btn">
+      <span class="material-icons" style="font-size:20px;">account_circle</span> Sign in with Google
+    </button>
+
+    <p class="auth-footer">Don't have an account? <a href="register.html" class="gradient-text">Sign up</a></p>
+  </div>
+</div>
+
+<!-- Forgot password modal -->
+<div id="forgot-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:200;align-items:center;justify-content:center;" class="flex">
+  <div class="glass-card auth-box" style="max-width:360px;">
+    <h3 class="mb-16">Reset your password</h3>
+    <p class="text-sm mb-16">Enter your email and we'll send you a reset link.</p>
+    <input class="form-input mb-16" type="email" id="reset-email" placeholder="you@example.com">
+    <div class="flex gap-8">
+      <button class="btn btn-outline" id="cancel-reset">Cancel</button>
+      <button class="btn btn-primary" id="send-reset">Send Link</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
+<script src="firebase-config.js"></script>
+<script src="utils.js"></script>
+<script src="auth.js"></script>
+
+<script>
+  // If already logged in, skip straight to dashboard
+  redirectIfAuthed();
+
+  // Toggle password visibility
+  document.getElementById("toggle-password").addEventListener("click", () => {
+    const pw = document.getElementById("password");
+    const icon = document.getElementById("toggle-password");
+    const showing = pw.type === "text";
+    pw.type = showing ? "password" : "text";
+    icon.textContent = showing ? "visibility" : "visibility_off";
+  });
+
+  // Login form submit
+  document.getElementById("login-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const email = cleanText(document.getElementById("email").value);
+    const password = document.getElementById("password").value;
+    const remember = document.getElementById("remember-me").checked;
+
+    document.getElementById("email-error").style.display = "none";
+    document.getElementById("password-error").style.display = "none";
+
+    if (!email || !email.includes("@")) {
+      showFieldError("email-error", "Please enter a valid email.");
+      return;
+    }
+    if (!password || password.length < 6) {
+      showFieldError("password-error", "Password must be at least 6 characters.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await signInWithEmail(email, password, remember);
+      showNotification("success", "Welcome back!");
+      window.location.href = "dashboard.html";
+    } catch (err) {
+      showNotification("error", friendlyAuthError(err));
+    } finally {
+      setLoading(false);
+    }
+  });
+
+  // Google sign in
+  document.getElementById("google-btn").addEventListener("click", async () => {
+    try {
+      await signInWithGoogle(true);
+      showNotification("success", "Signed in with Google!");
+      window.location.href = "dashboard.html";
+    } catch (err) {
+      showNotification("error", friendlyAuthError(err));
+    }
+  });
+
+  // Forgot password modal
+  const modal = document.getElementById("forgot-modal");
+  document.getElementById("forgot-link").addEventListener("click", (e) => {
+    e.preventDefault();
+    document.getElementById("reset-email").value = document.getElementById("email").value;
+    modal.style.display = "flex";
+  });
+  document.getElementById("cancel-reset").addEventListener("click", () => (modal.style.display = "none"));
+  document.getElementById("send-reset").addEventListener("click", async () => {
+    const email = cleanText(document.getElementById("reset-email").value);
+    if (!email || !email.includes("@")) {
+      showNotification("warning", "Enter a valid email first.");
+      return;
+    }
+    try {
+      await sendPasswordReset(email);
+      showNotification("success", "Reset link sent! Check your inbox.");
+      modal.style.display = "none";
+    } catch (err) {
+      showNotification("error", friendlyAuthError(err));
+    }
+  });
+
+  function showFieldError(id, msg) {
+    const el = document.getElementById(id);
+    el.textContent = msg;
+    el.style.display = "block";
+  }
+
+  function setLoading(loading) {
+    const btn = document.getElementById("login-btn");
+    btn.disabled = loading;
+    document.getElementById("login-btn-text").textContent = loading ? "Signing in..." : "Sign In";
+  }
+</script>
+</body>
+</html>

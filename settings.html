@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Settings — Vivy AI</title>
+<meta name="theme-color" content="#8b5cf6">
+<link rel="manifest" href="manifest.json">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="page">
+  <div class="top-header">
+    <button class="btn-icon" onclick="location.href='dashboard.html'"><span class="material-icons">arrow_back</span></button>
+    <h1>Settings</h1>
+    <div style="width:40px;"></div>
+  </div>
+
+  <div class="card mb-16" id="account-card">
+    <div class="skeleton skeleton-line" style="width:60%;"></div>
+  </div>
+
+  <h3 class="mb-8">Appearance</h3>
+  <div class="card mb-16">
+    <div class="settings-row">
+      <div class="sr-label"><span class="material-icons">dark_mode</span> Dark Mode</div>
+      <label class="switch"><input type="checkbox" id="dark-toggle"><span class="slider-toggle"></span></label>
+    </div>
+    <div class="settings-row">
+      <div class="sr-label"><span class="material-icons">language</span> Language</div>
+      <select class="form-select" id="lang-select" style="width:auto;padding:8px 12px;">
+        <option value="en">English</option>
+        <option value="es">Español</option>
+        <option value="fr">Français</option>
+        <option value="ar">العربية</option>
+        <option value="hi">हिन्दी</option>
+        <option value="zh">中文</option>
+      </select>
+    </div>
+  </div>
+
+  <h3 class="mb-8">Membership</h3>
+  <div class="card mb-16">
+    <div class="settings-row">
+      <div class="sr-label"><span class="material-icons">workspace_premium</span> Current Plan</div>
+      <span class="plan-badge plan-free" id="plan-display">Free</span>
+    </div>
+    <button class="btn btn-primary mt-16" onclick="upgradeToPremium()">
+      <span class="material-icons">bolt</span> Upgrade to Premium
+    </button>
+  </div>
+
+  <h3 class="mb-8">Data</h3>
+  <div class="card mb-16">
+    <div class="settings-row">
+      <div class="sr-label"><span class="material-icons">delete_sweep</span> Clear Chat History</div>
+      <button class="btn-icon" onclick="clearHistory()"><span class="material-icons">chevron_right</span></button>
+    </div>
+    <div class="settings-row">
+      <div class="sr-label" style="color:var(--error);"><span class="material-icons">person_remove</span> Delete Account</div>
+      <button class="btn-icon" onclick="deleteAccount()"><span class="material-icons">chevron_right</span></button>
+    </div>
+  </div>
+
+  <h3 class="mb-8">Legal &amp; About</h3>
+  <div class="card mb-16">
+    <div class="settings-row" style="cursor:pointer;" onclick="openLegal('privacy')"><div class="sr-label"><span class="material-icons">privacy_tip</span> Privacy Policy</div><span class="material-icons text-muted">chevron_right</span></div>
+    <div class="settings-row" style="cursor:pointer;" onclick="openLegal('terms')"><div class="sr-label"><span class="material-icons">gavel</span> Terms of Service</div><span class="material-icons text-muted">chevron_right</span></div>
+    <div class="settings-row" style="cursor:pointer;" onclick="openLegal('about')"><div class="sr-label"><span class="material-icons">info</span> About Vivy AI</div><span class="material-icons text-muted">chevron_right</span></div>
+  </div>
+
+  <button class="btn btn-outline mb-16" onclick="handleLogout()">
+    <span class="material-icons">logout</span> Log Out
+  </button>
+</div>
+
+<!-- Legal content modal -->
+<div id="legal-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:200;align-items:center;justify-content:center;padding:20px;" class="flex">
+  <div class="glass-card" style="max-width:480px;max-height:80vh;overflow-y:auto;padding:24px;">
+    <h3 id="legal-title" class="mb-16"></h3>
+    <div id="legal-body" class="text-sm text-muted"></div>
+    <button class="btn btn-primary mt-16" onclick="document.getElementById('legal-modal').style.display='none'">Close</button>
+  </div>
+</div>
+
+<nav class="bottom-nav">
+  <a href="dashboard.html" data-nav-link><span class="material-icons">dashboard</span>Home</a>
+  <a href="chat.html" data-nav-link><span class="material-icons">chat</span>Chat</a>
+  <a href="writer.html" data-nav-link><span class="material-icons">edit_note</span>Writer</a>
+  <a href="history.html" data-nav-link><span class="material-icons">history</span>History</a>
+  <a href="settings.html" data-nav-link class="active"><span class="material-icons">settings</span>Settings</a>
+</nav>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
+<script src="firebase-config.js"></script>
+<script src="utils.js"></script>
+<script src="auth.js"></script>
+<script>
+  let settingsUser = null;
+
+  (async function initSettings() {
+    settingsUser = await requireAuth();
+    const profile = await VivyUser.getProfile(settingsUser.uid);
+
+    document.getElementById("account-card").innerHTML = `
+      <div style="font-weight:700;">${sanitizeInput(settingsUser.displayName || "Vivy User")}</div>
+      <div class="text-sm text-muted">${sanitizeInput(settingsUser.email)}</div>`;
+
+    document.getElementById("plan-display").textContent = profile.plan === "premium" ? "Premium" : "Free";
+    document.getElementById("plan-display").className = `plan-badge ${profile.plan === "premium" ? "plan-premium" : "plan-free"}`;
+
+    // Theme toggle reflects saved state
+    const isDark = document.documentElement.getAttribute("data-theme") === "dark";
+    document.getElementById("dark-toggle").checked = isDark;
+
+    // Language preference (stored locally; hook up to i18n later)
+    document.getElementById("lang-select").value = localStorage.getItem("vivy_lang") || "en";
+  })();
+
+  document.getElementById("dark-toggle").addEventListener("change", (e) => {
+    VivyTheme.apply(e.target.checked ? "dark" : "light");
+  });
+
+  document.getElementById("lang-select").addEventListener("change", (e) => {
+    localStorage.setItem("vivy_lang", e.target.value);
+    showNotification("success", "Language preference saved.");
+  });
+
+  async function upgradeToPremium() {
+    // Architecture hook: in production this opens a payment flow (Stripe/RevenueCat/etc.)
+    // then a webhook/cloud function sets plan:'premium' on the user's Firestore doc.
+    showNotification("info", "Premium checkout is coming soon! This will unlock unlimited AI, no ads, and priority responses.");
+  }
+
+  async function clearHistory() {
+    if (!confirm("This will permanently delete all your chats and AI results. Continue?")) return;
+    const batchDelete = async (colName) => {
+      const snap = await db.collection("users").doc(settingsUser.uid).collection(colName).get();
+      const batch = db.batch();
+      snap.docs.forEach((d) => batch.delete(d.ref));
+      await batch.commit();
+    };
+    try {
+      await Promise.all([batchDelete("conversations"), batchDelete("history")]);
+      showNotification("success", "History cleared successfully.");
+    } catch (e) {
+      showNotification("error", "Failed to clear history.");
+    }
+  }
+
+  async function deleteAccount() {
+    if (!confirm("This will permanently delete your account and all data. This cannot be undone. Continue?")) return;
+    try {
+      await clearHistory();
+      await db.collection("users").doc(settingsUser.uid).delete();
+      await settingsUser.delete();
+      showNotification("success", "Account deleted.");
+      window.location.href = "login.html";
+    } catch (e) {
+      showNotification("error", "For security, please log out and log back in, then try again.");
+    }
+  }
+
+  async function handleLogout() {
+    if (confirm("Are you sure you want to log out?")) await logoutUser();
+  }
+
+  const LEGAL_CONTENT = {
+    privacy: { title: "Privacy Policy", body: "Vivy AI respects your privacy. We store your account details, conversations, and generated content securely in Firebase to power your personalized experience. We never sell your data. You can clear your history or delete your account at any time from Settings." },
+    terms: { title: "Terms of Service", body: "By using Vivy AI you agree to use the service responsibly and not to generate harmful, illegal, or abusive content. Free accounts have a daily AI usage limit; Premium accounts unlock unlimited usage. We may update these terms as the product evolves." },
+    about: { title: "About Vivy AI", body: "Vivy AI is your premium personal AI assistant — chat, write, summarize, translate, brainstorm, and analyze images, all in one beautifully designed app. Built with care for speed, privacy, and a delightful mobile-first experience." }
+  };
+
+  function openLegal(key) {
+    document.getElementById("legal-title").textContent = LEGAL_CONTENT[key].title;
+    document.getElementById("legal-body").textContent = LEGAL_CONTENT[key].body;
+    document.getElementById("legal-modal").style.display = "flex";
+  }
+</script>
+</body>
+</html>

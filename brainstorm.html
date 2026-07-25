@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>AI Brainstorm — Vivy AI</title>
+<meta name="theme-color" content="#8b5cf6">
+<link rel="manifest" href="manifest.json">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="page">
+  <div class="top-header">
+    <button class="btn-icon" onclick="location.href='dashboard.html'"><span class="material-icons">arrow_back</span></button>
+    <h1>AI Brainstorm</h1>
+    <div style="width:40px;"></div>
+  </div>
+
+  <p class="text-sm mb-16">Pick a category and get a burst of fresh ideas.</p>
+
+  <div class="tabs" id="brainstorm-tabs"></div>
+
+  <div class="card">
+    <div class="form-group">
+      <label class="form-label">Describe your idea, niche, or keyword</label>
+      <textarea class="form-textarea" id="brain-input" placeholder="e.g. eco-friendly home products for young families..."></textarea>
+    </div>
+    <button class="btn btn-primary" id="brain-btn" onclick="runBrainstorm()">
+      <span class="material-icons">lightbulb</span> Generate Ideas
+    </button>
+  </div>
+
+  <div class="card result-box mt-16" id="brain-result">
+    <p class="text-muted text-sm">Your ideas will appear here.</p>
+  </div>
+  <div class="result-actions" id="brain-actions" style="display:none;">
+    <button class="btn btn-outline btn-sm" onclick="copyBrainstorm()"><span class="material-icons" style="font-size:16px;">content_copy</span> Copy</button>
+    <button class="btn btn-outline btn-sm" onclick="runBrainstorm()"><span class="material-icons" style="font-size:16px;">refresh</span> More Ideas</button>
+  </div>
+</div>
+
+<nav class="bottom-nav">
+  <a href="dashboard.html" data-nav-link><span class="material-icons">dashboard</span>Home</a>
+  <a href="chat.html" data-nav-link><span class="material-icons">chat</span>Chat</a>
+  <a href="writer.html" data-nav-link><span class="material-icons">edit_note</span>Writer</a>
+  <a href="history.html" data-nav-link><span class="material-icons">history</span>History</a>
+  <a href="settings.html" data-nav-link><span class="material-icons">settings</span>Settings</a>
+</nav>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
+<script src="firebase-config.js"></script>
+<script src="utils.js"></script>
+<script src="auth.js"></script>
+<script>
+  let brainUser = null;
+  let brainCategory = "Business";
+  const BRAINSTORM_CATEGORIES = ["Business", "Startup", "App", "YouTube", "TikTok", "Instagram", "Marketing", "Product Names"];
+
+  (async function initBrainstorm() {
+    brainUser = await requireAuth();
+    const wrap = document.getElementById("brainstorm-tabs");
+    wrap.innerHTML = BRAINSTORM_CATEGORIES.map((c, i) => `<button class="tab-btn ${i === 0 ? "active" : ""}" data-cat="${c}">${c}</button>`).join("");
+    wrap.querySelectorAll(".tab-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        wrap.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        brainCategory = btn.dataset.cat;
+      });
+    });
+  })();
+
+  async function runBrainstorm() {
+    const topic = cleanText(document.getElementById("brain-input").value);
+    if (!topic) { showNotification("warning", "Please describe your idea or niche first."); return; }
+
+    const profile = await VivyUser.ensureDailyReset(brainUser.uid);
+    if (VivyUser.remaining(profile) <= 0) {
+      showNotification("warning", "Daily AI limit reached. Upgrade to Premium for unlimited use.");
+      return;
+    }
+
+    const btn = document.getElementById("brain-btn");
+    const resultBox = document.getElementById("brain-result");
+    btn.disabled = true;
+    btn.innerHTML = `<span class="spinner" style="width:18px;height:18px;border-width:2px;"></span> Thinking...`;
+    resultBox.innerHTML = `<div class="skeleton skeleton-line" style="width:80%;"></div><div class="skeleton skeleton-line" style="width:60%;"></div>`;
+
+    try {
+      const ideas = await VivyAI.generate({ task: "brainstorm", prompt: topic, meta: { category: brainCategory } });
+      resultBox.innerHTML = markdownToHtml(ideas);
+      resultBox.dataset.raw = ideas;
+      document.getElementById("brain-actions").style.display = "flex";
+      await VivyUser.incrementUsage(brainUser.uid);
+      await db.collection("users").doc(brainUser.uid).collection("history").add({
+        type: "brainstorm", title: `${brainCategory} ideas: ${topic.slice(0, 30)}`, content: ideas,
+        pinned: false, favorite: false, createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    } catch (e) {
+      showNotification("error", "Brainstorm failed. Please try again.");
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = `<span class="material-icons">lightbulb</span> Generate Ideas`;
+    }
+  }
+
+  function copyBrainstorm() {
+    const raw = document.getElementById("brain-result").dataset.raw || "";
+    navigator.clipboard.writeText(raw).then(() => showNotification("success", "Copied to clipboard"));
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>AI Translator — Vivy AI</title>
+<meta name="theme-color" content="#8b5cf6">
+<link rel="manifest" href="manifest.json">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="page">
+  <div class="top-header">
+    <button class="btn-icon" onclick="location.href='dashboard.html'"><span class="material-icons">arrow_back</span></button>
+    <h1>AI Translator</h1>
+    <div style="width:40px;"></div>
+  </div>
+
+  <div class="card">
+    <div class="form-group">
+      <label class="form-label">Text (language auto-detected)</label>
+      <textarea class="form-textarea" id="trans-input" placeholder="Type or paste text to translate..."></textarea>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Translate to</label>
+      <select class="form-select" id="trans-lang">
+        <option>Spanish</option><option>French</option><option>German</option>
+        <option>Chinese (Simplified)</option><option>Japanese</option><option>Korean</option>
+        <option>Arabic</option><option>Portuguese</option><option>Russian</option>
+        <option>Hindi</option><option>Italian</option><option>English</option>
+      </select>
+    </div>
+    <button class="btn btn-primary" id="trans-btn" onclick="runTranslate()">
+      <span class="material-icons">translate</span> Translate
+    </button>
+  </div>
+
+  <div class="card result-box mt-16" id="trans-result">
+    <p class="text-muted text-sm">Your translation will appear here.</p>
+  </div>
+  <div class="result-actions" id="trans-actions" style="display:none;">
+    <button class="btn btn-outline btn-sm" onclick="copyTranslation()"><span class="material-icons" style="font-size:16px;">content_copy</span> Copy</button>
+  </div>
+</div>
+
+<nav class="bottom-nav">
+  <a href="dashboard.html" data-nav-link><span class="material-icons">dashboard</span>Home</a>
+  <a href="chat.html" data-nav-link><span class="material-icons">chat</span>Chat</a>
+  <a href="writer.html" data-nav-link><span class="material-icons">edit_note</span>Writer</a>
+  <a href="history.html" data-nav-link><span class="material-icons">history</span>History</a>
+  <a href="settings.html" data-nav-link><span class="material-icons">settings</span>Settings</a>
+</nav>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
+<script src="firebase-config.js"></script>
+<script src="utils.js"></script>
+<script src="auth.js"></script>
+<script>
+  let transUser = null;
+  (async function initTranslator() { transUser = await requireAuth(); })();
+
+  async function runTranslate() {
+    const text = cleanText(document.getElementById("trans-input").value, 4000);
+    const targetLang = document.getElementById("trans-lang").value;
+    if (!text) { showNotification("warning", "Please enter some text to translate."); return; }
+
+    const profile = await VivyUser.ensureDailyReset(transUser.uid);
+    if (VivyUser.remaining(profile) <= 0) {
+      showNotification("warning", "Daily AI limit reached. Upgrade to Premium for unlimited use.");
+      return;
+    }
+
+    const btn = document.getElementById("trans-btn");
+    const resultBox = document.getElementById("trans-result");
+    btn.disabled = true;
+    btn.innerHTML = `<span class="spinner" style="width:18px;height:18px;border-width:2px;"></span> Translating...`;
+    resultBox.innerHTML = `<div class="skeleton skeleton-line" style="width:85%;"></div>`;
+
+    try {
+      const translated = await VivyAI.generate({ task: "translate", prompt: text, meta: { targetLang } });
+      resultBox.innerHTML = markdownToHtml(translated);
+      resultBox.dataset.raw = translated;
+      document.getElementById("trans-actions").style.display = "flex";
+      await VivyUser.incrementUsage(transUser.uid);
+      await db.collection("users").doc(transUser.uid).collection("history").add({
+        type: "translator", title: `Translation to ${targetLang}`, content: translated,
+        pinned: false, favorite: false, createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    } catch (e) {
+      showNotification("error", "Translation failed. Please try again.");
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = `<span class="material-icons">translate</span> Translate`;
+    }
+  }
+
+  function copyTranslation() {
+    const raw = document.getElementById("trans-result").dataset.raw || "";
+    navigator.clipboard.writeText(raw).then(() => showNotification("success", "Copied to clipboard"));
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Image Analysis — Vivy AI</title>
+<meta name="theme-color" content="#8b5cf6">
+<link rel="manifest" href="manifest.json">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="page">
+  <div class="top-header">
+    <button class="btn-icon" onclick="location.href='dashboard.html'"><span class="material-icons">arrow_back</span></button>
+    <h1>Image Analysis</h1>
+    <div style="width:40px;"></div>
+  </div>
+
+  <p class="text-sm mb-16">Upload an image — Vivy AI can describe it, read text (OCR), extract key info, or answer questions about it.</p>
+
+  <div class="card">
+    <div class="upload-zone" id="upload-zone" onclick="document.getElementById('image-input').click()">
+      <span class="material-icons" style="font-size:36px;color:var(--primary);">cloud_upload</span>
+      <p class="mt-8">Tap to upload an image</p>
+      <p class="text-sm">JPG, PNG, or WEBP — max 8MB</p>
+      <img id="image-preview" class="upload-preview mt-16" style="display:none;">
+    </div>
+    <input type="file" id="image-input" accept="image/*" style="display:none;">
+  </div>
+
+  <div class="card mt-16">
+    <div class="tabs" id="analysis-tabs"></div>
+    <div class="form-group" id="question-group" style="display:none;">
+      <label class="form-label">Your question about the image</label>
+      <input class="form-input" id="image-question" placeholder="e.g. What brand is this product?">
+    </div>
+    <button class="btn btn-primary" id="analyze-btn" onclick="runImageAnalysis()">
+      <span class="material-icons">image_search</span> Analyze Image
+    </button>
+  </div>
+
+  <div class="card result-box mt-16" id="image-result">
+    <p class="text-muted text-sm">Upload an image to get started.</p>
+  </div>
+  <div class="result-actions" id="image-actions" style="display:none;">
+    <button class="btn btn-outline btn-sm" onclick="copyImageResult()"><span class="material-icons" style="font-size:16px;">content_copy</span> Copy</button>
+  </div>
+</div>
+
+<nav class="bottom-nav">
+  <a href="dashboard.html" data-nav-link><span class="material-icons">dashboard</span>Home</a>
+  <a href="chat.html" data-nav-link><span class="material-icons">chat</span>Chat</a>
+  <a href="writer.html" data-nav-link><span class="material-icons">edit_note</span>Writer</a>
+  <a href="history.html" data-nav-link><span class="material-icons">history</span>History</a>
+  <a href="settings.html" data-nav-link><span class="material-icons">settings</span>Settings</a>
+</nav>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
+<script src="firebase-config.js"></script>
+<script src="utils.js"></script>
+<script src="auth.js"></script>
+<script>
+  let imgUser = null;
+  let selectedImageBase64 = null;
+  let selectedImageFile = null;
+  let analysisMode = "Describe";
+  const ANALYSIS_MODES = ["Describe", "Read Text (OCR)", "Answer Question", "Extract Key Info"];
+
+  (async function initImageAnalysis() {
+    imgUser = await requireAuth();
+    const wrap = document.getElementById("analysis-tabs");
+    wrap.innerHTML = ANALYSIS_MODES.map((m, i) => `<button class="tab-btn ${i === 0 ? "active" : ""}" data-mode="${m}">${m}</button>`).join("");
+    wrap.querySelectorAll(".tab-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        wrap.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        analysisMode = btn.dataset.mode;
+        document.getElementById("question-group").style.display = analysisMode === "Answer Question" ? "block" : "none";
+      });
+    });
+  })();
+
+  const zone = document.getElementById("upload-zone");
+  ["dragover", "dragleave", "drop"].forEach((evt) => {
+    zone.addEventListener(evt, (e) => {
+      e.preventDefault();
+      zone.classList.toggle("dragover", evt === "dragover");
+      if (evt === "drop" && e.dataTransfer.files[0]) handleImageFile(e.dataTransfer.files[0]);
+    });
+  });
+  document.getElementById("image-input").addEventListener("change", (e) => {
+    if (e.target.files[0]) handleImageFile(e.target.files[0]);
+  });
+
+  function handleImageFile(file) {
+    if (!file.type.startsWith("image/")) { showNotification("error", "Please upload a valid image file."); return; }
+    if (file.size > 8 * 1024 * 1024) { showNotification("error", "Image must be under 8MB."); return; }
+    selectedImageFile = file;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      selectedImageBase64 = e.target.result;
+      const preview = document.getElementById("image-preview");
+      preview.src = selectedImageBase64;
+      preview.style.display = "block";
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function runImageAnalysis() {
+    if (!selectedImageBase64) { showNotification("warning", "Please upload an image first."); return; }
+    if (analysisMode === "Answer Question" && !cleanText(document.getElementById("image-question").value)) {
+      showNotification("warning", "Please type your question about the image.");
+      return;
+    }
+
+    const profile = await VivyUser.ensureDailyReset(imgUser.uid);
+    if (VivyUser.remaining(profile) <= 0) {
+      showNotification("warning", "Daily AI limit reached. Upgrade to Premium for unlimited use.");
+      return;
+    }
+
+    const btn = document.getElementById("analyze-btn");
+    const resultBox = document.getElementById("image-result");
+    btn.disabled = true;
+    btn.innerHTML = `<span class="spinner" style="width:18px;height:18px;border-width:2px;"></span> Analyzing...`;
+    resultBox.innerHTML = `<div class="skeleton skeleton-line" style="width:85%;"></div><div class="skeleton skeleton-line" style="width:65%;"></div>`;
+
+    try {
+      // Optionally upload to Firebase Storage so it's saved with the history entry
+      let storageUrl = null;
+      try {
+        const ref = storage.ref(`users/${imgUser.uid}/image-analysis/${uid()}-${selectedImageFile.name}`);
+        await ref.put(selectedImageFile);
+        storageUrl = await ref.getDownloadURL();
+      } catch (storageErr) {
+        console.warn("Storage upload skipped:", storageErr.message);
+      }
+
+      const question = analysisMode === "Answer Question" ? cleanText(document.getElementById("image-question").value) : analysisMode;
+      const result = await VivyAI.generate({ task: "vision", prompt: question, imageBase64: selectedImageBase64 });
+
+      resultBox.innerHTML = markdownToHtml(result);
+      resultBox.dataset.raw = result;
+      document.getElementById("image-actions").style.display = "flex";
+      await VivyUser.incrementUsage(imgUser.uid);
+      await db.collection("users").doc(imgUser.uid).collection("history").add({
+        type: "image-analysis", title: `${analysisMode}`, content: result, imageUrl: storageUrl || null,
+        pinned: false, favorite: false, createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    } catch (e) {
+      showNotification("error", "Image analysis failed. Please try again.");
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = `<span class="material-icons">image_search</span> Analyze Image`;
+    }
+  }
+
+  function copyImageResult() {
+    const raw = document.getElementById("image-result").dataset.raw || "";
+    navigator.clipboard.writeText(raw).then(() => showNotification("success", "Copied to clipboard"));
+  }
+</script>
+</body>
+</html>

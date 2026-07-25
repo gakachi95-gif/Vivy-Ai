@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>History — Vivy AI</title>
+<meta name="theme-color" content="#8b5cf6">
+<link rel="manifest" href="manifest.json">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="page">
+  <div class="top-header">
+    <button class="btn-icon" onclick="location.href='dashboard.html'"><span class="material-icons">arrow_back</span></button>
+    <h1>History</h1>
+    <div style="width:40px;"></div>
+  </div>
+
+  <input class="form-input mb-16" id="history-search" placeholder="Search your history..." oninput="filterHistory(this.value)">
+
+  <div class="tabs" id="history-filter-tabs"></div>
+
+  <div id="history-list"></div>
+</div>
+
+<nav class="bottom-nav">
+  <a href="dashboard.html" data-nav-link><span class="material-icons">dashboard</span>Home</a>
+  <a href="chat.html" data-nav-link><span class="material-icons">chat</span>Chat</a>
+  <a href="writer.html" data-nav-link><span class="material-icons">edit_note</span>Writer</a>
+  <a href="history.html" data-nav-link class="active"><span class="material-icons">history</span>History</a>
+  <a href="settings.html" data-nav-link><span class="material-icons">settings</span>Settings</a>
+</nav>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
+<script src="firebase-config.js"></script>
+<script src="utils.js"></script>
+<script src="auth.js"></script>
+<script>
+  let histUser = null;
+  let allItems = [];
+  let activeFilter = "All";
+  const FILTERS = ["All", "Pinned", "Favorites", "Chats", "Writer", "Summarizer", "Translator", "Brainstorm", "Image"];
+
+  (async function initHistory() {
+    histUser = await requireAuth();
+    renderFilterTabs();
+    await loadHistory();
+  })();
+
+  function renderFilterTabs() {
+    const wrap = document.getElementById("history-filter-tabs");
+    wrap.innerHTML = FILTERS.map((f, i) => `<button class="tab-btn ${i === 0 ? "active" : ""}" data-filter="${f}">${f}</button>`).join("");
+    wrap.querySelectorAll(".tab-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        wrap.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        activeFilter = btn.dataset.filter;
+        renderList();
+      });
+    });
+  }
+
+  async function loadHistory() {
+    document.getElementById("history-list").innerHTML = `
+      <div class="skeleton skeleton-card mb-16"></div>
+      <div class="skeleton skeleton-card mb-16"></div>
+      <div class="skeleton skeleton-card"></div>`;
+
+    const [convosSnap, itemsSnap] = await Promise.all([
+      db.collection("users").doc(histUser.uid).collection("conversations").orderBy("updatedAt", "desc").limit(100).get(),
+      db.collection("users").doc(histUser.uid).collection("history").orderBy("createdAt", "desc").limit(100).get()
+    ]);
+
+    const convos = convosSnap.docs.map((d) => ({
+      id: d.id, collection: "conversations", kind: "Chats",
+      title: d.data().title || "Untitled chat",
+      preview: (d.data().messages || []).slice(-1)[0]?.text || "",
+      pinned: !!d.data().pinned, favorite: !!d.data().favorite,
+      ts: d.data().updatedAt
+    }));
+
+    const items = itemsSnap.docs.map((d) => {
+      const data = d.data();
+      const kindMap = { writer: "Writer", summarizer: "Summarizer", translator: "Translator", brainstorm: "Brainstorm", "image-analysis": "Image" };
+      return {
+        id: d.id, collection: "history", kind: kindMap[data.type] || "Other",
+        title: data.title || "Untitled",
+        preview: (data.content || "").slice(0, 80),
+        pinned: !!data.pinned, favorite: !!data.favorite,
+        ts: data.createdAt
+      };
+    });
+
+    allItems = [...convos, ...items].sort((a, b) => (b.ts?.toMillis?.() || 0) - (a.ts?.toMillis?.() || 0));
+    renderList();
+  }
+
+  function renderList(searchQuery = "") {
+    const list = document.getElementById("history-list");
+    let filtered = allItems;
+
+    if (activeFilter === "Pinned") filtered = filtered.filter((i) => i.pinned);
+    else if (activeFilter === "Favorites") filtered = filtered.filter((i) => i.favorite);
+    else if (activeFilter !== "All") filtered = filtered.filter((i) => i.kind === activeFilter);
+
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      filtered = filtered.filter((i) => i.title.toLowerCase().includes(q) || i.preview.toLowerCase().includes(q));
+    }
+
+    if (filtered.length === 0) {
+      list.innerHTML = `<div class="empty-state"><span class="material-icons">inbox</span><p>No history found</p></div>`;
+      return;
+    }
+
+    list.innerHTML = filtered.map((item) => `
+      <div class="card history-item" data-id="${item.id}" data-collection="${item.collection}">
+        <div class="qc-icon" style="width:38px;height:38px;flex-shrink:0;">
+          <span class="material-icons" style="font-size:18px;">${iconFor(item.kind)}</span>
+        </div>
+        <div style="flex:1;min-width:0;cursor:pointer;" onclick="openItem('${item.collection}','${item.id}')">
+          <div class="hi-title">${sanitizeInput(item.title)}</div>
+          <div class="hi-preview">${sanitizeInput(item.preview)}</div>
+        </div>
+        <div class="hi-actions">
+          <button class="btn-icon pin-icon ${item.pinned ? "active" : ""}" style="width:34px;height:34px;" onclick="toggleField('${item.collection}','${item.id}','pinned',${item.pinned})"><span class="material-icons" style="font-size:16px;">push_pin</span></button>
+          <button class="btn-icon fav-icon ${item.favorite ? "active" : ""}" style="width:34px;height:34px;" onclick="toggleField('${item.collection}','${item.id}','favorite',${item.favorite})"><span class="material-icons" style="font-size:16px;">favorite</span></button>
+          <button class="btn-icon" style="width:34px;height:34px;" onclick="renameItem('${item.collection}','${item.id}')"><span class="material-icons" style="font-size:16px;">edit</span></button>
+          <button class="btn-icon" style="width:34px;height:34px;" onclick="deleteItem('${item.collection}','${item.id}')"><span class="material-icons" style="font-size:16px;">delete</span></button>
+        </div>
+      </div>
+    `).join("");
+  }
+
+  function iconFor(kind) {
+    return { Chats: "chat", Writer: "edit_note", Summarizer: "summarize", Translator: "translate", Brainstorm: "lightbulb", Image: "image_search" }[kind] || "description";
+  }
+
+  const filterHistory = debounce((q) => renderList(q), 250);
+
+  function openItem(collection, id) {
+    if (collection === "conversations") window.location.href = `chat.html?id=${id}`;
+    else showNotification("info", "Open the relevant tool from the dashboard to continue this result.");
+  }
+
+  async function toggleField(collection, id, field, current) {
+    await db.collection("users").doc(histUser.uid).collection(collection).doc(id).update({ [field]: !current });
+    await loadHistory();
+  }
+
+  async function renameItem(collection, id) {
+    const newTitle = prompt("Rename this item:");
+    if (!newTitle) return;
+    await db.collection("users").doc(histUser.uid).collection(collection).doc(id).update({ title: cleanText(newTitle, 60) });
+    showNotification("success", "Renamed successfully");
+    await loadHistory();
+  }
+
+  async function deleteItem(collection, id) {
+    if (!confirm("Delete this item permanently?")) return;
+    await db.collection("users").doc(histUser.uid).collection(collection).doc(id).delete();
+    showNotification("success", "Deleted");
+    await loadHistory();
+  }
+</script>
+</body>
+</html>

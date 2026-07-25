@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Vivy AI — Your Personal AI Assistant</title>
+<meta name="theme-color" content="#8b5cf6">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="splash">
+  <div class="logo-mark flex items-center justify-between" style="display:flex;align-items:center;justify-content:center;">V</div>
+  <h2 class="gradient-text">Vivy AI</h2>
+  <div class="spinner"></div>
+  <p class="text-sm">Loading your assistant...</p>
+</div>
+
+<!-- Firebase CDN SDKs (compat build — works with plain <script> tags) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-analytics-compat.js"></script>
+<script src="firebase-config.js"></script>
+<script src="utils.js"></script>
+
+<script>
+  // Route based on auth state: logged in -> dashboard, else -> login
+  auth.onAuthStateChanged((user) => {
+    window.location.replace(user ? "dashboard.html" : "login.html");
+  });
+
+  // Register service worker for PWA support
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("service-worker.js").catch((e) => console.warn("SW registration failed:", e));
+    });
+  }
+</script>
+</body>
+</html>

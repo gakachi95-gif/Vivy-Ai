@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Create Account — Vivy AI</title>
+<meta name="theme-color" content="#8b5cf6">
+<link rel="manifest" href="manifest.json">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="auth-page">
+  <div class="glass-card auth-box">
+    <div class="auth-logo">
+      <div class="logo-mark">V</div>
+      <h1 class="gradient-text">Vivy AI</h1>
+    </div>
+    <h2 class="text-center mb-16">Create your account</h2>
+
+    <form id="register-form" novalidate>
+      <div class="form-group">
+        <label class="form-label" for="username">Username</label>
+        <input class="form-input" type="text" id="username" placeholder="Your name" required minlength="2">
+        <div class="field-error" id="username-error"></div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="email">Email</label>
+        <input class="form-input" type="email" id="email" placeholder="you@example.com" required>
+        <div class="field-error" id="email-error"></div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="password">Password</label>
+        <input class="form-input" type="password" id="password" placeholder="At least 6 characters" required minlength="6">
+        <div class="field-error" id="password-error"></div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="confirm-password">Confirm Password</label>
+        <input class="form-input" type="password" id="confirm-password" placeholder="Repeat password" required minlength="6">
+        <div class="field-error" id="confirm-error"></div>
+      </div>
+
+      <label class="form-check mb-16">
+        <input type="checkbox" id="agree-terms" required>
+        I agree to the <a href="settings.html" class="gradient-text">Terms &amp; Privacy Policy</a>
+      </label>
+
+      <button type="submit" class="btn btn-primary" id="register-btn">
+        <span id="register-btn-text">Create Account</span>
+      </button>
+    </form>
+
+    <div class="auth-divider">or continue with</div>
+
+    <button class="btn btn-google" id="google-btn">
+      <span class="material-icons" style="font-size:20px;">account_circle</span> Sign up with Google
+    </button>
+
+    <p class="auth-footer">Already have an account? <a href="login.html" class="gradient-text">Sign in</a></p>
+  </div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
+<script src="firebase-config.js"></script>
+<script src="utils.js"></script>
+<script src="auth.js"></script>
+
+<script>
+  redirectIfAuthed();
+
+  document.getElementById("register-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    ["username-error", "email-error", "password-error", "confirm-error"].forEach((id) => {
+      document.getElementById(id).style.display = "none";
+    });
+
+    const username = cleanText(document.getElementById("username").value, 40);
+    const email = cleanText(document.getElementById("email").value);
+    const password = document.getElementById("password").value;
+    const confirm = document.getElementById("confirm-password").value;
+    const agreed = document.getElementById("agree-terms").checked;
+
+    let valid = true;
+    if (username.length < 2) { showFieldError("username-error", "Please enter your name."); valid = false; }
+    if (!email.includes("@")) { showFieldError("email-error", "Please enter a valid email."); valid = false; }
+    if (password.length < 6) { showFieldError("password-error", "At least 6 characters required."); valid = false; }
+    if (password !== confirm) { showFieldError("confirm-error", "Passwords do not match."); valid = false; }
+    if (!agreed) { showNotification("warning", "Please agree to the Terms & Privacy Policy."); valid = false; }
+    if (!valid) return;
+
+    setLoading(true);
+    try {
+      await signUpWithEmail(username, email, password);
+      showNotification("success", "Account created! Welcome to Vivy AI.");
+      window.location.href = "dashboard.html";
+    } catch (err) {
+      showNotification("error", friendlyAuthError(err));
+    } finally {
+      setLoading(false);
+    }
+  });
+
+  document.getElementById("google-btn").addEventListener("click", async () => {
+    try {
+      await signInWithGoogle(true);
+      showNotification("success", "Account created with Google!");
+      window.location.href = "dashboard.html";
+    } catch (err) {
+      showNotification("error", friendlyAuthError(err));
+    }
+  });
+
+  function showFieldError(id, msg) {
+    const el = document.getElementById(id);
+    el.textContent = msg;
+    el.style.display = "block";
+  }
+  function setLoading(loading) {
+    const btn = document.getElementById("register-btn");
+    btn.disabled = loading;
+    document.getElementById("register-btn-text").textContent = loading ? "Creating account..." : "Create Account";
+  }
+</script>
+</body>
+</html>

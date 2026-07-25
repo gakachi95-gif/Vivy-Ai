@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>AI Writer — Vivy AI</title>
+<meta name="theme-color" content="#8b5cf6">
+<link rel="manifest" href="manifest.json">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="page">
+  <div class="top-header">
+    <button class="btn-icon" onclick="location.href='dashboard.html'"><span class="material-icons">arrow_back</span></button>
+    <h1>AI Writer</h1>
+    <div style="width:40px;"></div>
+  </div>
+
+  <p class="text-sm mb-16">Pick a content type, describe your topic, and let Vivy AI write it for you.</p>
+
+  <div class="tabs" id="format-tabs"></div>
+
+  <div class="card">
+    <div class="form-group">
+      <label class="form-label">What should it be about?</label>
+      <textarea class="form-textarea" id="writer-topic" placeholder="e.g. A blog post about the benefits of morning routines for busy professionals..."></textarea>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Tone</label>
+      <select class="form-select" id="writer-tone">
+        <option>Professional</option>
+        <option>Friendly</option>
+        <option>Persuasive</option>
+        <option>Casual</option>
+        <option>Witty</option>
+        <option>Formal</option>
+      </select>
+    </div>
+    <button class="btn btn-primary" id="writer-generate-btn" onclick="generateWriterContent()">
+      <span class="material-icons">auto_awesome</span> Generate
+    </button>
+  </div>
+
+  <div class="card result-box mt-16" id="writer-result">
+    <p class="text-muted text-sm">Your generated content will appear here.</p>
+  </div>
+  <div class="result-actions" id="writer-result-actions" style="display:none;">
+    <button class="btn btn-outline btn-sm" onclick="copyWriterResult()"><span class="material-icons" style="font-size:16px;">content_copy</span> Copy</button>
+    <button class="btn btn-outline btn-sm" onclick="generateWriterContent()"><span class="material-icons" style="font-size:16px;">refresh</span> Regenerate</button>
+  </div>
+</div>
+
+<nav class="bottom-nav">
+  <a href="dashboard.html" data-nav-link><span class="material-icons">dashboard</span>Home</a>
+  <a href="chat.html" data-nav-link><span class="material-icons">chat</span>Chat</a>
+  <a href="writer.html" data-nav-link class="active"><span class="material-icons">edit_note</span>Writer</a>
+  <a href="history.html" data-nav-link><span class="material-icons">history</span>History</a>
+  <a href="settings.html" data-nav-link><span class="material-icons">settings</span>Settings</a>
+</nav>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
+<script src="firebase-config.js"></script>
+<script src="utils.js"></script>
+<script src="auth.js"></script>
+<script src="writer.js"></script>
+</body>
+</html>

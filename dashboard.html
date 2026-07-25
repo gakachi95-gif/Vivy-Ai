@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Dashboard — Vivy AI</title>
+<meta name="theme-color" content="#8b5cf6">
+<link rel="manifest" href="manifest.json">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="app-shell">
+  <!-- Desktop sidebar (hidden on mobile) -->
+  <aside class="sidebar">
+    <div class="sidebar-logo"><div class="logo-mark" style="width:36px;height:36px;font-size:1rem;">V</div><strong class="gradient-text">Vivy AI</strong></div>
+    <a href="dashboard.html" data-nav-link class="active"><span class="material-icons">dashboard</span> Dashboard</a>
+    <a href="chat.html" data-nav-link><span class="material-icons">chat</span> AI Chat</a>
+    <a href="writer.html" data-nav-link><span class="material-icons">edit_note</span> AI Writer</a>
+    <a href="summarizer.html" data-nav-link><span class="material-icons">summarize</span> Summarizer</a>
+    <a href="translator.html" data-nav-link><span class="material-icons">translate</span> Translator</a>
+    <a href="brainstorm.html" data-nav-link><span class="material-icons">lightbulb</span> Brainstorm</a>
+    <a href="image-analysis.html" data-nav-link><span class="material-icons">image_search</span> Image Analysis</a>
+    <a href="history.html" data-nav-link><span class="material-icons">history</span> History</a>
+    <a href="settings.html" data-nav-link><span class="material-icons">settings</span> Settings</a>
+  </aside>
+
+  <main class="main-content">
+    <div class="page">
+      <div class="top-header">
+        <div>
+          <h1>Hi, <span id="greet-name" class="gradient-text">there</span> 👋</h1>
+          <p class="text-sm">What would you like to do today?</p>
+        </div>
+        <button class="btn-icon" onclick="location.href='settings.html'"><span class="material-icons">settings</span></button>
+      </div>
+
+      <!-- Profile card -->
+      <div class="glass-card profile-card" id="profile-card">
+        <div class="skeleton skeleton-card w-full" id="profile-skeleton"></div>
+      </div>
+
+      <!-- Ad banner (free plan only) -->
+      <div class="ad-banner" id="ad-banner" style="display:none;">
+        📢 Sponsored — Upgrade to <strong>Premium</strong> to remove ads &amp; unlock unlimited AI.
+      </div>
+
+      <h3 class="mt-24 mb-8">Quick Actions</h3>
+      <div class="quick-grid">
+        <a href="chat.html" class="card quick-card"><div class="qc-icon"><span class="material-icons">chat</span></div><div class="qc-title">AI Chat</div></a>
+        <a href="writer.html" class="card quick-card"><div class="qc-icon"><span class="material-icons">edit_note</span></div><div class="qc-title">AI Writer</div></a>
+        <a href="summarizer.html" class="card quick-card"><div class="qc-icon"><span class="material-icons">summarize</span></div><div class="qc-title">AI Summarizer</div></a>
+        <a href="translator.html" class="card quick-card"><div class="qc-icon"><span class="material-icons">translate</span></div><div class="qc-title">AI Translator</div></a>
+        <a href="brainstorm.html" class="card quick-card"><div class="qc-icon"><span class="material-icons">lightbulb</span></div><div class="qc-title">AI Brainstorm</div></a>
+        <a href="image-analysis.html" class="card quick-card"><div class="qc-icon"><span class="material-icons">image_search</span></div><div class="qc-title">Image Analysis</div></a>
+        <a href="history.html" class="card quick-card"><div class="qc-icon"><span class="material-icons">history</span></div><div class="qc-title">Chat History</div></a>
+        <a href="settings.html" class="card quick-card"><div class="qc-icon"><span class="material-icons">settings</span></div><div class="qc-title">Settings</div></a>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- Bottom nav (mobile) -->
+<nav class="bottom-nav">
+  <a href="dashboard.html" data-nav-link class="active"><span class="material-icons">dashboard</span>Home</a>
+  <a href="chat.html" data-nav-link><span class="material-icons">chat</span>Chat</a>
+  <a href="writer.html" data-nav-link><span class="material-icons">edit_note</span>Writer</a>
+  <a href="history.html" data-nav-link><span class="material-icons">history</span>History</a>
+  <a href="settings.html" data-nav-link><span class="material-icons">settings</span>Settings</a>
+</nav>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
+<script src="firebase-config.js"></script>
+<script src="utils.js"></script>
+<script src="auth.js"></script>
+
+<script>
+  (async function initDashboard() {
+    const user = await requireAuth();
+    const profile = await VivyUser.ensureDailyReset(user.uid);
+    const remaining = VivyUser.remaining(profile);
+    const limit = profile.plan === "premium" ? "Unlimited" : AI_CONFIG.freeDailyLimit;
+    const usedPct = profile.plan === "premium" ? 100 : Math.min(100, (profile.dailyUsed / AI_CONFIG.freeDailyLimit) * 100);
+
+    document.getElementById("greet-name").textContent = (user.displayName || user.email.split("@")[0]);
+
+    const initials = (user.displayName || user.email)[0].toUpperCase();
+    const avatarHtml = user.photoURL
+      ? `<img class="avatar" src="${user.photoURL}" alt="avatar">`
+      : `<div class="avatar">${initials}</div>`;
+
+    document.getElementById("profile-card").innerHTML = `
+      ${avatarHtml}
+      <div style="flex:1;min-width:0;">
+        <div style="font-weight:700;font-size:1.02rem;">${sanitizeInput(user.displayName || "Vivy User")}</div>
+        <div class="text-sm text-muted" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${sanitizeInput(user.email)}</div>
+        <span class="plan-badge ${profile.plan === "premium" ? "plan-premium" : "plan-free"}">
+          <span class="material-icons" style="font-size:13px;">${profile.plan === "premium" ? "workspace_premium" : "bolt"}</span>
+          ${profile.plan === "premium" ? "Premium" : "Free"}
+        </span>
+        <div class="text-sm mt-8">Daily AI messages: <strong>${remaining === Infinity ? "∞" : remaining}</strong> / ${limit}</div>
+        <div class="usage-bar-track"><div class="usage-bar-fill" style="width:${usedPct}%"></div></div>
+      </div>
+    `;
+
+    if (profile.plan !== "premium") {
+      document.getElementById("ad-banner").style.display = "block";
+    }
+  })();
+</script>
+</body>
+</html>
