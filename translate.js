@@ -1,6 +1,6 @@
 /* ==========================================================================
-   routes/writer.js — POST /writer
-   Accepts: { topic: string, format?: string, tone?: string }
+   routes/translate.js — POST /translate
+   Accepts: { text: string, targetLang?: string }
    Returns: { success, reply, model, usage }
    ========================================================================== */
 
@@ -18,23 +18,22 @@ router.post(
   "/",
   requireFirebaseAuth,
   validateBody({
-    topic: { required: true, type: "string", maxLen: 2000 },
-    format: { required: false, type: "string", maxLen: 60 },
-    tone: { required: false, type: "string", maxLen: 40 }
+    text: { required: true, type: "string", maxLen: 4000 },
+    targetLang: { required: false, type: "string", maxLen: 40 }
   }),
   enforceDailyLimit,
   async (req, res) => {
     try {
       const uid = req.uid;
-      const { topic, format, tone } = req.validated;
+      const { text, targetLang } = req.validated;
 
-      const result = await aiService.generate("writer", { topic, format, tone });
+      const result = await aiService.generate("translate", { text, targetLang });
       await firestoreService.incrementUsage(uid);
 
       return sendSuccess(res, { reply: result.reply, model: result.model, usage: result.usage });
     } catch (err) {
-      console.error("POST /writer error:", err.message);
-      return sendError(res, "Failed to generate content. Please try again.", 502);
+      console.error("POST /translate error:", err.message);
+      return sendError(res, "Failed to translate text. Please try again.", 502);
     }
   }
 );

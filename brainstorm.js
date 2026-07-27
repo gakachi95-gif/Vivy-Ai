@@ -1,6 +1,6 @@
 /* ==========================================================================
-   routes/writer.js — POST /writer
-   Accepts: { topic: string, format?: string, tone?: string }
+   routes/brainstorm.js — POST /brainstorm
+   Accepts: { topic: string, category?: string }
    Returns: { success, reply, model, usage }
    ========================================================================== */
 
@@ -18,23 +18,22 @@ router.post(
   "/",
   requireFirebaseAuth,
   validateBody({
-    topic: { required: true, type: "string", maxLen: 2000 },
-    format: { required: false, type: "string", maxLen: 60 },
-    tone: { required: false, type: "string", maxLen: 40 }
+    topic: { required: true, type: "string", maxLen: 1000 },
+    category: { required: false, type: "string", maxLen: 40 }
   }),
   enforceDailyLimit,
   async (req, res) => {
     try {
       const uid = req.uid;
-      const { topic, format, tone } = req.validated;
+      const { topic, category } = req.validated;
 
-      const result = await aiService.generate("writer", { topic, format, tone });
+      const result = await aiService.generate("brainstorm", { topic, category });
       await firestoreService.incrementUsage(uid);
 
       return sendSuccess(res, { reply: result.reply, model: result.model, usage: result.usage });
     } catch (err) {
-      console.error("POST /writer error:", err.message);
-      return sendError(res, "Failed to generate content. Please try again.", 502);
+      console.error("POST /brainstorm error:", err.message);
+      return sendError(res, "Failed to generate ideas. Please try again.", 502);
     }
   }
 );
