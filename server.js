@@ -1,125 +1,88 @@
 /* ==========================================================================
    VIVY AI BACKEND — server.js
    --------------------------------------------------------------------------
-   Small Express server deployed on Render. Two jobs only:
-   1. POST /verify-payment — called by the frontend right after a Flutterwave
-      checkout completes. Re-verifies the transaction directly with
-      Flutterwave's server (never trusts the browser) using your SECRET key,
-      then marks the user's Firestore doc as plan:'premium'.
-   2. POST /flutterwave-webhook — Flutterwave also calls this directly as a
-      backup, in case the user closes the tab right after paying. Verifies
-      the webhook signature before trusting it.
+   Thin entry point: wires up middleware, mounts every route module, and
+   starts the server. All actual logic lives in routes/, providers/,
+   middleware/, services/, and utils/.
 
-   Environment variables required (set these in the Render dashboard, never
-   commit them to git):
-     FLW_SECRET_KEY         Your Flutterwave secret key (sk_live_... / sk_test_...)
-     FLW_WEBHOOK_HASH        A secret string YOU choose, also entered in the
-                             Flutterwave dashboard webhook settings, used to
-                             verify webhook calls really came from Flutterwave
-     FIREBASE_SERVICE_ACCOUNT  The full JSON of your Firebase service account
-                             key, as a single-line string (see README-deploy.md)
-     ALLOWED_ORIGIN          Your deployed frontend origin, e.g.
-                             https://kachi95-gif.github.io  (for CORS)
+   Architecture:
+     GitHub Pages Frontend -> Render Backend (this) -> OpenRouter -> AI Model
+                                        |
+                                        +-> Flutterwave (payments)
+                                        +-> Firestore (users, usage, plans)
+
+   Required environment variables (set in Render Dashboard -> Environment):
+     OPENROUTER_API_KEY        Your OpenRouter API key
+     OPENROUTER_MODEL           e.g. anthropic/claude-sonnet-4
+     ALLOWED_ORIGIN             Your GitHub Pages origin, e.g. https://you.github.io
+     FLW_SECRET_KEY             Flutterwave secret key
+     FLW_WEBHOOK_HASH            Random string, also set in Flutterwave webhook settings
+     FIREBASE_SERVICE_ACCOUNT     Full service account JSON, as one string
+     NODE_ENV                   "production" on Render
+     FREE_DAILY_MESSAGES          e.g. 20
+     PREMIUM_DAILY_MESSAGES         e.g. 1000
+     MAX_TOKENS                 e.g. 1024
+     TEMPERATURE                 e.g. 0.7
    ========================================================================== */
 
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
-const fetch = require("node-fetch");
-const admin = require("firebase-admin");
 
 const app = express();
-app.use(express.json());
 
-// ---- CORS: only allow requests from your deployed frontend ----
+// ---- Body parsing. Higher limit needed for base64 image-analysis payloads ----
+app.use(express.json({ limit: "15mb" }));
+
+// ---- CORS: only allow requests from the deployed frontend origin ----
 const allowedOrigin = process.env.ALLOWED_ORIGIN || "*";
 app.use(cors({ origin: allowedOrigin }));
 
-// ---- Initialize Firebase Admin SDK from the service account env var ----
-if (!admin.apps.length) {
-  const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount)
+// ---- Basic request timing log (never logs bodies/headers/keys) ----
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on("finish", () => {
+    console.log(`${req.method} ${req.path} -> ${res.statusCode} (${Date.now() - start}ms)`);
   });
-}
-const db = admin.firestore();
+  next();
+});
 
-// Health check — useful to confirm Render deployed correctly
+// ---- Health check — confirms the service deployed correctly ----
 app.get("/", (req, res) => {
-  res.json({ status: "ok", service: "vivy-ai-backend" });
+  res.json({
+    status: "ok",
+    service: "vivy-ai-backend",
+    model: process.env.OPENROUTER_MODEL || "not configured",
+    env: process.env.NODE_ENV || "development"
+  });
 });
 
-/* --------------------------------------------------------------------------
-   POST /verify-payment
-   Body: { transaction_id: string, uid: string, expectedAmount: number }
-   -------------------------------------------------------------------------- */
-app.post("/verify-payment", async (req, res) => {
-  try {
-    const { transaction_id, uid, expectedAmount } = req.body;
+// ---- AI routes (all require Firebase auth + enforce daily limits) ----
+app.use("/chat", require("./routes/chat"));
+app.use("/writer", require("./routes/writer"));
+app.use("/summarize", require("./routes/summarize"));
+app.use("/translate", require("./routes/translate"));
+app.use("/brainstorm", require("./routes/brainstorm"));
+app.use("/image-analysis", require("./routes/imageAnalysis"));
 
-    if (!transaction_id || !uid) {
-      return res.status(400).json({ success: false, message: "Missing transaction_id or uid." });
-    }
+// ---- Payment routes (Flutterwave — unauthenticated by design, Flutterwave
+//      calls the webhook server-to-server; verify-payment is called by the
+//      frontend right after checkout and independently re-verifies with
+//      Flutterwave before trusting anything) ----
+app.use("/", require("./routes/payment"));
 
-    // Ask Flutterwave directly whether this transaction really succeeded
-    const flwRes = await fetch(
-      `https://api.flutterwave.com/v3/transactions/${transaction_id}/verify`,
-      { headers: { Authorization: `Bearer ${process.env.FLW_SECRET_KEY}` } }
-    );
-    const flwData = await flwRes.json();
-
-    if (flwData.status !== "success" || flwData.data.status !== "successful") {
-      return res.status(400).json({ success: false, message: "Payment not verified as successful." });
-    }
-
-    // Guard against amount tampering — reject if paid amount is less than expected
-    if (expectedAmount && flwData.data.amount < expectedAmount) {
-      return res.status(400).json({ success: false, message: "Paid amount does not match expected plan price." });
-    }
-
-    // All good — upgrade the user to Premium
-    await db.collection("users").doc(uid).update({
-      plan: "premium",
-      premiumSince: admin.firestore.FieldValue.serverTimestamp(),
-      lastPaymentRef: transaction_id
-    });
-
-    return res.json({ success: true, message: "Upgraded to Premium!" });
-  } catch (err) {
-    console.error("verify-payment error:", err);
-    return res.status(500).json({ success: false, message: "Server error verifying payment." });
-  }
+// ---- 404 fallback ----
+app.use((req, res) => {
+  res.status(404).json({ success: false, message: "Not found." });
 });
 
-/* --------------------------------------------------------------------------
-   POST /flutterwave-webhook
-   Backup path: Flutterwave calls this server-to-server on payment events.
-   -------------------------------------------------------------------------- */
-app.post("/flutterwave-webhook", async (req, res) => {
-  try {
-    const signature = req.headers["verif-hash"];
-    if (!signature || signature !== process.env.FLW_WEBHOOK_HASH) {
-      return res.status(401).send("Invalid signature");
-    }
-
-    const event = req.body;
-    if (event.event === "charge.completed" && event.data.status === "successful") {
-      const uid = event.data.meta?.uid; // we pass uid as "meta" when initiating checkout
-      if (uid) {
-        await db.collection("users").doc(uid).update({
-          plan: "premium",
-          premiumSince: admin.firestore.FieldValue.serverTimestamp(),
-          lastPaymentRef: String(event.data.id)
-        });
-      }
-    }
-
-    res.status(200).send("ok");
-  } catch (err) {
-    console.error("webhook error:", err);
-    res.status(500).send("error");
-  }
+// ---- Global error handler (catches anything that slipped past try/catch) ----
+app.use((err, req, res, next) => {
+  console.error("Unhandled error:", err.message);
+  res.status(500).json({ success: false, message: "Internal server error." });
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Vivy AI backend running on port ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`Vivy AI backend running on port ${PORT} (model: ${process.env.OPENROUTER_MODEL || "not set"})`);
+});

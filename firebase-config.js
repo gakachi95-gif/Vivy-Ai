@@ -9,12 +9,13 @@
    ========================================================================== */
 
 const firebaseConfig = {
-  apiKey: "AIzaSyDjcjJf7dIyYLbxYrX5r2oXwpgSUr7gkLA",
-  authDomain: "vivylive-62c7d.firebaseapp.com",
-  projectId: "vivylive-62c7d",
-  storageBucket: "vivylive-62c7d.firebasestorage.app",
-  messagingSenderId: "279820446345",
-  appId: "1:279820446345:web:a806cbad950d720a463458"
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_PROJECT_ID.appspot.com",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId: "YOUR_APP_ID",
+  measurementId: "G-YOUR_MEASUREMENT_ID" // optional, used by Analytics
 };
 
 // Initialize Firebase (compat mode — works with plain <script> tags, no bundler)
@@ -53,8 +54,22 @@ try {
    and demoable — see ai-fallback logic inside utils.js -> VivyAI.
    ========================================================================== */
 const AI_CONFIG = {
-  endpoint: "https://YOUR-CLOUD-FUNCTION-URL/generate", // <-- set this
-  enabled: false, // flip to true once AI_CONFIG.endpoint is live
-  freeDailyLimit: 20, // messages/day for Free plan
+  endpoint: "https://vivy-ai-backend.onrender.com", // <-- your Render backend BASE URL (no trailing slash, no /generate)
+  enabled: false, // flip to true once your backend is deployed and this URL is correct
+  freeDailyLimit: 20, // messages/day for Free plan (must match FREE_DAILY_MESSAGES on the backend)
   premiumDailyLimit: Infinity
+};
+
+/* --------------------------------------------------------------------------
+   FLUTTERWAVE PAYMENT CONFIG
+   --------------------------------------------------------------------------
+   publicKey is safe to expose in the browser (that's how Flutterwave's
+   inline checkout is designed to work). The SECRET key must only ever live
+   on the backend (see vivy-ai-backend/server.js) — never put it here.
+   ========================================================================== */
+const FLW_CONFIG = {
+  publicKey: "FLWPUBK_TEST-xxxxxxxxxxxxxxxxxxxxxxxxx-X", // <-- your Flutterwave PUBLIC key
+  verifyEndpoint: "https://vivy-ai-backend.onrender.com/verify-payment", // <-- your Render backend URL
+  premiumPriceNGN: 2500, // set your actual premium price
+  currency: "NGN"
 };
