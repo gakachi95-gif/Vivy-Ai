@@ -1,5 +1,5 @@
 /* ==========================================================================
-   VIVY AI — utils.js
+   VIVY AI â€” utils.js
    Shared helpers used across every page: notifications, form validation,
    sanitization, markdown rendering, theming, auth guarding, plan/usage
    limits and the AI request wrapper.
@@ -186,12 +186,19 @@ const VivyUser = {
 /**
  * Central AI request wrapper. All feature pages (chat, writer, summarizer,
  * translator, brainstorm, image-analysis) call VivyAI.generate() so the
- * provider/endpoint only needs to change in ONE place (firebase-config.js).
+ * provider/endpoint only needs to change in ONE place.
  *
- * If AI_CONFIG.enabled is false (no backend deployed yet) this falls back
- * to a lightweight local response generator so every screen stays fully
- * functional for demos/testing without exposing any API key in the browser.
+ * The "chat" task talks to the real Vivy backend
+ * (POST https://vivy-ai.onrender.com/chat), authenticated with the current
+ * Firebase user's ID token. There is no offline fallback for chat â€” if the
+ * backend can't be reached, generate() throws so the caller can surface a
+ * real error instead of a fake canned response.
+ *
+ * Other tasks (writer, summarize, translate, brainstorm, vision) don't have
+ * a backend yet, so they still use the local offline demo generator.
  */
+const VIVY_CHAT_ENDPOINT = "https://vivy-ai.onrender.com/chat";
+
 const VivyAI = {
   /**
    * @param {Object} opts
@@ -202,26 +209,42 @@ const VivyAI = {
    * @returns {Promise<string>} the AI's text response
    */
   async generate({ task, prompt, meta = {}, imageBase64 = null }) {
-    if (AI_CONFIG.enabled && AI_CONFIG.endpoint) {
-      const res = await fetch(AI_CONFIG.endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ task, prompt, meta, imageBase64 })
-      });
-      if (!res.ok) throw new Error("AI service error: " + res.status);
-      const data = await res.json();
-      return data.text || data.result || "";
+    if (task === "chat") {
+      return this._chat({ prompt, meta });
     }
-    // ---- Offline / demo fallback (no key exposed, still fully usable) ----
+    // ---- Offline / demo fallback for tasks with no live backend yet ----
     return this._offlineFallback({ task, prompt, meta, imageBase64 });
+  },
+
+  /** Calls the real chat backend, authenticated with the user's Firebase ID token. */
+  async _chat({ prompt, meta = {} }) {
+    const user = firebase.auth().currentUser;
+    if (!user) throw new Error("You must be signed in to chat.");
+    const token = await user.getIdToken();
+
+    const res = await fetch(VIVY_CHAT_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        message: prompt,
+        conversation: meta.conversation || []
+      })
+    });
+
+    if (!res.ok) throw new Error("AI service error: " + res.status);
+
+    const data = await res.json();
+    if (!data.success) throw new Error("AI service returned an unsuccessful response.");
+    return data.reply || "";
   },
 
   async _offlineFallback({ task, prompt, meta, imageBase64 }) {
     await new Promise((r) => setTimeout(r, 700 + Math.random() * 500)); // simulate latency
     const p = cleanText(prompt).slice(0, 160);
     switch (task) {
-      case "chat":
-        return `Here's my take on: "${p}"\n\nI'm currently running in **offline demo mode** because no AI backend endpoint is configured yet (see AI_CONFIG in firebase-config.js). Once you connect a real AI provider through a secure cloud function, I'll respond with genuine AI-generated answers here.\n\n- Your message was received correctly\n- Chat storage, markdown, and UI are fully working\n- Just plug in a live endpoint to go fully live`;
       case "writer":
         return `**${meta.format || "Content"} draft** (offline demo)\n\nTopic: ${p}\n\nThis is a placeholder draft showing formatting, tone (${meta.tone || "neutral"}) and structure. Connect a live AI endpoint to generate real long-form content here.`;
       case "summarize":
@@ -229,9 +252,9 @@ const VivyAI = {
       case "translate":
         return `[Offline demo translation to ${meta.targetLang || "target language"}]\n${p}`;
       case "brainstorm":
-        return `**Ideas for ${meta.category || "your topic"}:**\n1. Idea inspired by "${p}" — angle A\n2. Idea inspired by "${p}" — angle B\n3. Idea inspired by "${p}" — angle C\n4. Idea inspired by "${p}" — angle D\n5. Idea inspired by "${p}" — angle E`;
+        return `**Ideas for ${meta.category || "your topic"}:**\n1. Idea inspired by "${p}" â€” angle A\n2. Idea inspired by "${p}" â€” angle B\n3. Idea inspired by "${p}" â€” angle C\n4. Idea inspired by "${p}" â€” angle D\n5. Idea inspired by "${p}" â€” angle E`;
       case "vision":
-        return `**Image received.** Offline demo mode can't analyze pixels yet — connect a real vision-capable AI endpoint to get descriptions, OCR text, and Q&A about your uploaded image.`;
+        return `**Image received.** Offline demo mode can't analyze pixels yet â€” connect a real vision-capable AI endpoint to get descriptions, OCR text, and Q&A about your uploaded image.`;
       default:
         return "AI response (offline demo mode).";
     }
