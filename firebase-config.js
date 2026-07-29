@@ -54,9 +54,9 @@ try {
    and demoable — see ai-fallback logic inside utils.js -> VivyAI.
    ========================================================================== */
 const AI_CONFIG = {
-  endpoint: "https://vivy-ai-backend.onrender.com", // <-- your Render backend BASE URL (no trailing slash, no /generate)
-  enabled: false, // flip to true once your backend is deployed and this URL is correct
-  freeDailyLimit: 20, // messages/day for Free plan (must match FREE_DAILY_MESSAGES on the backend)
+  endpoint: "https://vivy-ai.onrender.com/chat",
+  enabled: true,
+  freeDailyLimit: 20,
   premiumDailyLimit: Infinity
 };
 
