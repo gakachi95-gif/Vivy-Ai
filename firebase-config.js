@@ -1,5 +1,5 @@
 /* ==========================================================================
-   FIREBASE CONFIG — Vivy AI
+   FIREBASE CONFIG â€” Vivy AI
    --------------------------------------------------------------------------
    Replace the values below with your own Firebase project credentials.
    Get them from: Firebase Console -> Project Settings -> General -> Your apps
@@ -18,7 +18,7 @@ const firebaseConfig = {
   measurementId: "G-YOUR_MEASUREMENT_ID" // optional, used by Analytics
 };
 
-// Initialize Firebase (compat mode — works with plain <script> tags, no bundler)
+// Initialize Firebase (compat mode â€” works with plain <script> tags, no bundler)
 firebase.initializeApp(firebaseConfig);
 
 // Shared references used across every page
@@ -26,7 +26,7 @@ const auth = firebase.auth();
 const db = firebase.firestore();
 const storage = firebase.storage();
 
-// Analytics is optional — only initialize if supported (avoids errors on
+// Analytics is optional â€” only initialize if supported (avoids errors on
 // browsers/environments that block it, e.g. some in-app browsers).
 let analytics = null;
 try {
@@ -44,17 +44,17 @@ try {
    --------------------------------------------------------------------------
    Vivy AI never calls an AI provider with a secret key directly from the
    browser (that would leak the key to every visitor). Instead, all AI
-   requests are sent to AI_ENDPOINT — a small serverless/cloud function
+   requests are sent to AI_ENDPOINT â€” a small serverless/cloud function
    (Firebase Cloud Function, Cloudflare Worker, Vercel Edge Function, etc.)
    that holds the real API key server-side and forwards the request to your
    AI provider of choice (OpenAI, Anthropic, Gemini...).
 
    Until you deploy that function, Vivy AI automatically falls back to a
    local "offline mode" so every screen in this app is still fully usable
-   and demoable — see ai-fallback logic inside utils.js -> VivyAI.
+   and demoable â€” see ai-fallback logic inside utils.js -> VivyAI.
    ========================================================================== */
 const AI_CONFIG = {
-  endpoint: "https://vivy-ai.onrender.com/chat",
+  endpoint: "https://vivy-ai.onrender.com",
   enabled: true,
   freeDailyLimit: 20,
   premiumDailyLimit: Infinity
@@ -65,7 +65,7 @@ const AI_CONFIG = {
    --------------------------------------------------------------------------
    publicKey is safe to expose in the browser (that's how Flutterwave's
    inline checkout is designed to work). The SECRET key must only ever live
-   on the backend (see vivy-ai-backend/server.js) — never put it here.
+   on the backend (see vivy-ai-backend/server.js) â€” never put it here.
    ========================================================================== */
 const FLW_CONFIG = {
   publicKey: "FLWPUBK_TEST-xxxxxxxxxxxxxxxxxxxxxxxxx-X", // <-- your Flutterwave PUBLIC key
