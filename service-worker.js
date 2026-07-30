@@ -5,7 +5,7 @@
    force a refresh.
    ========================================================================== */
 
-const CACHE_NAME = "vivy-ai-cache-v2";
+const CACHE_NAME = "vivy-ai-cache-v3";
 
 const APP_SHELL = [
   "./index.html",
@@ -74,4 +74,3 @@ self.addEventListener("fetch", (event) => {
     })
   );
 });
-￼Enter
