@@ -9,15 +9,13 @@
    ========================================================================== */
 
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT_ID.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID",
-  measurementId: "G-YOUR_MEASUREMENT_ID" // optional, used by Analytics
+  apiKey: "AIzaSyDjcjJf7dIyYLbxYrX5r2oXwpgSUr7gkLA",
+  authDomain: "vivylive-62c7d.firebaseapp.com",
+  projectId: "vivylive-62c7d",
+  storageBucket: "vivylive-62c7d.firebasestorage.app",
+  messagingSenderId: "279820446345",
+  appId: "1:279820446345:web:a806cbad950d720a463458"
 };
-
 // Initialize Firebase (compat mode — works with plain <script> tags, no bundler)
 firebase.initializeApp(firebaseConfig);
 
