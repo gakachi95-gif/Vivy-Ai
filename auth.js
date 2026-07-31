@@ -7,11 +7,26 @@
 
 const googleProvider = new firebase.auth.GoogleAuthProvider();
 
+/**
+ * Some environments (in-app browsers like Facebook/TikTok/Instagram's
+ * built-in webview, private/incognito mode, some in-app webviews) restrict
+ * storage access and throw auth/unsupported-persistence-type when Firebase
+ * tries to set LOCAL/SESSION persistence. When that happens we fall back to
+ * Firebase's default in-memory persistence instead of blocking sign-in.
+ */
+async function trySetPersistence(remember) {
+  try {
+    await auth.setPersistence(
+      remember ? firebase.auth.Auth.Persistence.LOCAL : firebase.auth.Auth.Persistence.SESSION
+    );
+  } catch (e) {
+    console.warn("Persistence not supported in this browser, using default:", e.message);
+  }
+}
+
 /** Signs in with email/password. `remember` controls session persistence. */
 async function signInWithEmail(email, password, remember = true) {
-  await auth.setPersistence(
-    remember ? firebase.auth.Auth.Persistence.LOCAL : firebase.auth.Auth.Persistence.SESSION
-  );
+  await trySetPersistence(remember);
   return auth.signInWithEmailAndPassword(email, password);
 }
 
@@ -25,9 +40,7 @@ async function signUpWithEmail(username, email, password) {
 
 /** Google sign-in popup (works for both login and register flows). */
 async function signInWithGoogle(remember = true) {
-  await auth.setPersistence(
-    remember ? firebase.auth.Auth.Persistence.LOCAL : firebase.auth.Auth.Persistence.SESSION
-  );
+  await trySetPersistence(remember);
   const cred = await auth.signInWithPopup(googleProvider);
   await VivyUser.getProfile(cred.user.uid); // no-op if the profile already exists
   return cred;
@@ -57,7 +70,8 @@ function friendlyAuthError(err) {
     "auth/weak-password": "Please choose a stronger password (6+ characters).",
     "auth/popup-closed-by-user": "Google sign-in was cancelled.",
     "auth/network-request-failed": "Network error — please check your connection.",
-    "auth/too-many-requests": "Too many attempts. Please wait a moment and try again."
+    "auth/too-many-requests": "Too many attempts. Please wait a moment and try again.",
+    "auth/unsupported-persistence-type": "This browser doesn't support staying signed in — try opening the site in Chrome or Safari instead of an in-app browser."
   };
   return map[code] || err?.message || "Something went wrong. Please try again.";
-}
+     }
