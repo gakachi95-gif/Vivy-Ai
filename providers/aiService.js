@@ -25,7 +25,16 @@ const SYSTEM_PROMPTS = {
  */
 async function generate(task, payload) {
   const messages = buildMessages(task, payload);
-  const result = await callOpenRouter(messages);
+
+  // Image analysis needs a multimodal model — the general-purpose
+  // OPENROUTER_MODEL is often text-only and will reject image content.
+  // OPENROUTER_VISION_MODEL is optional; falls back to a known free
+  // vision-capable model if not set, so image analysis works out of the box.
+  const options = task === "imageAnalysis"
+    ? { model: process.env.OPENROUTER_VISION_MODEL || "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free" }
+    : {};
+
+  const result = await callOpenRouter(messages, options);
   return {
     reply: result.text,
     model: result.model,
