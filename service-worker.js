@@ -1,11 +1,13 @@
 /* ==========================================================================
    VIVY AI — service-worker.js
-   Basic offline-first caching so the app shell loads instantly and works
-   without a network connection. Bump CACHE_NAME whenever assets change to
-   force a refresh.
+   Offline-first caching for the app shell. Uses NETWORK-FIRST for app
+   files (HTML/CSS/JS) so a fresh deploy is always picked up immediately —
+   the cache is only a fallback for when the network is unavailable, never
+   the first choice. Bump CACHE_NAME whenever you want to force a full
+   cache reset (e.g. after removing/renaming files in APP_SHELL).
    ========================================================================== */
 
-const CACHE_NAME = "vivy-ai-cache-v3";
+const CACHE_NAME = "vivy-ai-cache-v4";
 
 const APP_SHELL = [
   "./index.html",
@@ -29,7 +31,7 @@ const APP_SHELL = [
   "./manifest.json"
 ];
 
-// Install: pre-cache the app shell
+// Install: pre-cache the app shell (best-effort — a missing file shouldn't block install)
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)).catch((err) => {
@@ -39,7 +41,7 @@ self.addEventListener("install", (event) => {
   self.skipWaiting();
 });
 
-// Activate: clean up old caches
+// Activate: drop every cache that isn't the current version
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
@@ -49,28 +51,37 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
-// Fetch: network-first for Firebase/API calls, cache-first for app shell
+// Fetch: network-first for same-origin app files, with cache as an offline fallback only.
+// Anything cross-origin (Firebase, the chat API, Google Fonts, CDNs) is left completely
+// alone — the browser handles those requests natively, no interception at all.
 self.addEventListener("fetch", (event) => {
-  const url = event.request.url;
+  const url = new URL(event.request.url);
 
-  // Never intercept Firebase/Firestore/Auth/API calls — always go to network
-  if (url.includes("googleapis.com") || url.includes("firebaseio.com") || url.includes("gstatic.com")) {
+  // Only ever handle same-origin GET requests for our own app files.
+  if (url.origin !== self.location.origin || event.request.method !== "GET") {
     return;
   }
 
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) return cached;
-      return fetch(event.request)
-        .then((response) => {
-          // Cache successful same-origin GET requests for future offline use
-          if (event.request.method === "GET" && response.status === 200) {
-            const clone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
-          }
-          return response;
+    fetch(event.request)
+      .then((response) => {
+        // Fresh copy succeeded — use it, and update the cache for offline use later.
+        if (response.status === 200) {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+        }
+        return response;
+      })
+      .catch(() =>
+        // Network failed (offline) — fall back to whatever we have cached.
+        // Only fall back to index.html for actual page navigations, never
+        // for scripts/styles, so a missing asset fails loudly instead of
+        // silently swapping in the wrong content.
+        caches.match(event.request).then((cached) => {
+          if (cached) return cached;
+          if (event.request.mode === "navigate") return caches.match("./index.html");
+          return Response.error();
         })
-        .catch(() => caches.match("./index.html"));
-    })
+      )
   );
 });
