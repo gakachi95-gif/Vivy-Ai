@@ -307,7 +307,7 @@ function highlightActiveNav() {
     if (link.getAttribute("href") === current) link.classList.add("active");
   });
 }
-document.addEventListener("DOMContentLoaded", highlightActiveNav);￼Enter/* ==========================================================================
+document.addEventListener("DOMContentLoaded", highlightActiveNav); ==========================================================================
    VIVY AI â€” utils.js
    Shared helpers used across every page: notifications, form validation,
    sanitization, markdown rendering, theming, auth guarding, plan/usage
@@ -408,7 +408,7 @@ const VivyTheme = {
     this.apply(saved);
   },
   apply(theme) {
-cument.documentElement.setAttribute("data-theme", theme);
+document.documentElement.setAttribute("data-theme", theme);
     localStorage.setItem(this.KEY, theme);
   },
   toggle() {
