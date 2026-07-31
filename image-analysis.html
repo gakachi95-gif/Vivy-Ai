@@ -154,7 +154,8 @@
         pinned: false, favorite: false, createdAt: firebase.firestore.FieldValue.serverTimestamp()
       });
     } catch (e) {
-      showNotification("error", "Image analysis failed. Please try again.");
+      resultBox.innerHTML = `<p class="text-muted text-sm">Upload an image to get started.</p>`;
+      showNotification("error", e.message || "Image analysis failed. Please try again.");
     } finally {
       btn.disabled = false;
       btn.innerHTML = `<span class="material-icons">image_search</span> Analyze Image`;
