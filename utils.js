@@ -205,76 +205,84 @@ const VivyUser = {
  * translator, brainstorm, image-analysis) call VivyAI.generate() so the
  * provider/endpoint only needs to change in ONE place.
  *
- * The "chat" task talks to the real Vivy backend
- * (POST https://vivy-ai.onrender.com/chat), authenticated with the current
- * Firebase user's ID token. There is no offline fallback for chat — if the
- * backend can't be reached, generate() throws so the caller can surface a
- * real error instead of a fake canned response.
+ * Every task talks to its real backend route on Render, authenticated with
+ * the current Firebase user's ID token:
+ *   chat        -> POST /chat            { message, conversation }
+ *   writer      -> POST /writer          { topic, format, tone }
+ *   summarize   -> POST /summarize       { text }
+ *   translate   -> POST /translate       { text, targetLang }
+ *   brainstorm  -> POST /brainstorm      { topic, category }
+ *   vision      -> POST /image-analysis  { imageBase64, question }
  *
- * Other tasks (writer, summarize, translate, brainstorm, vision) don't have
- * a backend yet, so they still use the local offline demo generator.
+ * Every route returns { success, reply, model, usage } on success, or
+ * { success: false, message } on failure — generate() throws with that
+ * message so the caller's catch block shows the real reason, not a generic
+ * status code.
  */
-const VIVY_CHAT_ENDPOINT = "https://vivy-ai.onrender.com/chat";
+const VIVY_API_BASE = "https://vivy-ai.onrender.com";
+
+const VIVY_TASK_ENDPOINTS = {
+  chat: "/chat",
+  writer: "/writer",
+  summarize: "/summarize",
+  translate: "/translate",
+  brainstorm: "/brainstorm",
+  vision: "/image-analysis"
+};
+
+/** Builds the exact request body each backend route expects. */
+function buildVivyRequestBody(task, prompt, meta, imageBase64) {
+  switch (task) {
+    case "chat":
+      return { message: prompt, conversation: meta.conversation || [] };
+    case "writer":
+      return { topic: prompt, format: meta.format, tone: meta.tone };
+    case "summarize":
+      return { text: prompt };
+    case "translate":
+      return { text: prompt, targetLang: meta.targetLang };
+    case "brainstorm":
+      return { topic: prompt, category: meta.category };
+    case "vision":
+      return { imageBase64, question: prompt };
+    default:
+      throw new Error(`Unknown AI task: "${task}"`);
+  }
+}
 
 const VivyAI = {
   /**
    * @param {Object} opts
-   * @param {string} opts.task - e.g. "chat", "writer", "summarize", "translate", "brainstorm", "vision"
+   * @param {string} opts.task - "chat" | "writer" | "summarize" | "translate" | "brainstorm" | "vision"
    * @param {string} opts.prompt - the user's text prompt
-   * @param {Object} [opts.meta] - extra structured params (tone, language, format...)
-   * @param {string} [opts.imageBase64] - optional base64 image for vision tasks
+   * @param {Object} [opts.meta] - extra structured params (tone, language, format, category, conversation...)
+   * @param {string} [opts.imageBase64] - required for "vision" tasks
    * @returns {Promise<string>} the AI's text response
    */
   async generate({ task, prompt, meta = {}, imageBase64 = null }) {
-    if (task === "chat") {
-      return this._chat({ prompt, meta });
-    }
-    // ---- Offline / demo fallback for tasks with no live backend yet ----
-    return this._offlineFallback({ task, prompt, meta, imageBase64 });
-  },
+    const endpoint = VIVY_TASK_ENDPOINTS[task];
+    if (!endpoint) throw new Error(`Unknown AI task: "${task}"`);
 
-  /** Calls the real chat backend, authenticated with the user's Firebase ID token. */
-  async _chat({ prompt, meta = {} }) {
     const user = firebase.auth().currentUser;
-    if (!user) throw new Error("You must be signed in to chat.");
+    if (!user) throw new Error("You must be signed in to use Vivy AI.");
     const token = await user.getIdToken();
 
-    const res = await fetch(VIVY_CHAT_ENDPOINT, {
+    const res = await fetch(VIVY_API_BASE + endpoint, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${token}`
       },
-      body: JSON.stringify({
-        message: prompt,
-        conversation: meta.conversation || []
-      })
+      body: JSON.stringify(buildVivyRequestBody(task, prompt, meta, imageBase64))
     });
 
-    if (!res.ok) throw new Error("AI service error: " + res.status);
+    const data = await res.json().catch(() => ({}));
 
-    const data = await res.json();
-    if (!data.success) throw new Error("AI service returned an unsuccessful response.");
-    return data.reply || "";
-  },
-
-  async _offlineFallback({ task, prompt, meta, imageBase64 }) {
-    await new Promise((r) => setTimeout(r, 700 + Math.random() * 500)); // simulate latency
-    const p = cleanText(prompt).slice(0, 160);
-    switch (task) {
-      case "writer":
-        return `**${meta.format || "Content"} draft** (offline demo)\n\nTopic: ${p}\n\nThis is a placeholder draft showing formatting, tone (${meta.tone || "neutral"}) and structure. Connect a live AI endpoint to generate real long-form content here.`;
-      case "summarize":
-        return `**Short Summary**\n${p.slice(0, 90)}...\n\n**Bullet Points**\n- Key point one from your text\n- Key point two from your text\n- Key point three from your text\n\n**Key Ideas**\nThe main idea centers on the topic you pasted. Connect a live AI backend for a real summary.`;
-      case "translate":
-        return `[Offline demo translation to ${meta.targetLang || "target language"}]\n${p}`;
-      case "brainstorm":
-        return `**Ideas for ${meta.category || "your topic"}:**\n1. Idea inspired by "${p}" — angle A\n2. Idea inspired by "${p}" — angle B\n3. Idea inspired by "${p}" — angle C\n4. Idea inspired by "${p}" — angle D\n5. Idea inspired by "${p}" — angle E`;
-      case "vision":
-        return `**Image received.** Offline demo mode can't analyze pixels yet — connect a real vision-capable AI endpoint to get descriptions, OCR text, and Q&A about your uploaded image.`;
-      default:
-        return "AI response (offline demo mode).";
+    if (!res.ok || !data.success) {
+      throw new Error(data.message || `AI service error: ${res.status}`);
     }
+
+    return data.reply || "";
   }
 };
 
