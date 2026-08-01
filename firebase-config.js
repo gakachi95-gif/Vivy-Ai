@@ -68,7 +68,7 @@ const AI_CONFIG = {
 const FLW_CONFIG = {
   publicKey: "FLWPUBK_TEST-xxxxxxxxxxxxxxxxxxxxxxxxx-X", // <-- your Flutterwave PUBLIC key
   verifyEndpoint: "https://vivy-ai-backend.onrender.com/verify-payment", // <-- your Render backend URL
-  premiumPriceNGN: 2500, // set your actual premium price
-  currency: "NGN"
+  premiumPriceNGN: 5, // set your actual premium price
+  currency: "USD"
 };
 
