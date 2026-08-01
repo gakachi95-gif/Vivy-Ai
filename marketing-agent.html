@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Marketing Agent — Vivy AI</title>
+<meta name="theme-color" content="#8b5cf6">
+<link rel="icon" href="../icons/icon-192.png">
+<link rel="manifest" href="../manifest.json">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+<link rel="stylesheet" href="../styles.css">
+<link rel="stylesheet" href="../css/marketing-agent.css">
+</head>
+<body>
+
+<div class="page">
+  <div class="top-header">
+    <button class="btn-icon" onclick="location.href='../dashboard.html'"><span class="material-icons">arrow_back</span></button>
+    <h1>🚀 Marketing Agent</h1>
+    <div style="width:40px;"></div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="mkt-tabs">
+    <div class="mkt-tab active" data-nav-tab="dashboard" onclick="showView('dashboard')"><span class="material-icons" style="font-size:16px;">dashboard</span> Dashboard</div>
+    <div class="mkt-tab" data-nav-tab="calendar" onclick="showView('calendar')"><span class="material-icons" style="font-size:16px;">calendar_month</span> Calendar</div>
+    <div class="mkt-tab" data-nav-tab="accounts" onclick="showView('accounts')"><span class="material-icons" style="font-size:16px;">link</span> Accounts</div>
+    <div class="mkt-tab" data-nav-tab="analytics" onclick="showView('analytics')"><span class="material-icons" style="font-size:16px;">bar_chart</span> Analytics</div>
+  </div>
+
+  <!-- =========================  DASHBOARD  ========================= -->
+  <div data-view="dashboard">
+    <button class="btn btn-primary btn-new-campaign" onclick="openCampaignForm()">
+      <span class="material-icons">add_circle</span> New Campaign
+    </button>
+
+    <div class="mkt-stat-grid">
+      <div class="card mkt-stat-card"><div class="mkt-stat-value" id="dash-active-campaigns">0</div><div class="mkt-stat-label">Active Campaigns</div></div>
+      <div class="card mkt-stat-card"><div class="mkt-stat-value" id="dash-scheduled-posts">0</div><div class="mkt-stat-label">Scheduled Posts</div></div>
+      <div class="card mkt-stat-card"><div class="mkt-stat-value" id="dash-published-posts">0</div><div class="mkt-stat-label">Published Posts</div></div>
+      <div class="card mkt-stat-card"><div class="mkt-stat-value" id="dash-drafts">0</div><div class="mkt-stat-label">Drafts</div></div>
+    </div>
+
+    <h3 class="mb-8">AI Suggestions</h3>
+    <div class="card mb-16">
+      <div class="suggestion-card"><span class="material-icons">lightbulb</span><p class="text-sm">Campaigns with 3+ platforms tend to reach a wider audience — try adding Instagram or LinkedIn if you haven't yet.</p></div>
+      <div class="suggestion-card"><span class="material-icons">lightbulb</span><p class="text-sm">Posting consistently over 14+ days builds more momentum than short 7-day bursts.</p></div>
+      <div class="suggestion-card"><span class="material-icons">lightbulb</span><p class="text-sm">Review each generated caption before scheduling — small edits for your brand voice go a long way.</p></div>
+    </div>
+
+    <h3 class="mb-8">Your Campaigns</h3>
+    <div id="campaign-list"></div>
+  </div>
+
+  <!-- =========================  NEW CAMPAIGN FORM  ========================= -->
+  <div data-view="campaign-form" style="display:none;">
+    <button class="btn-icon mb-16" onclick="showView('dashboard')"><span class="material-icons">arrow_back</span></button>
+    <h2 class="mb-16">New Campaign</h2>
+
+    <form id="campaign-form">
+      <div class="form-group mb-16">
+        <label class="form-label" for="campaign-name">Campaign Name</label>
+        <input class="form-input" id="campaign-name" placeholder="e.g. Summer Launch" required>
+      </div>
+      <div class="form-group mb-16">
+        <label class="form-label" for="business-name">Business Name</label>
+        <input class="form-input" id="business-name" placeholder="e.g. Vivy Coffee Co." required>
+      </div>
+      <div class="form-group mb-16">
+        <label class="form-label" for="business-description">Business Description</label>
+        <textarea class="form-input" id="business-description" rows="3" placeholder="What does your business do?" required></textarea>
+      </div>
+      <div class="form-group mb-16">
+        <label class="form-label" for="target-audience">Target Audience</label>
+        <input class="form-input" id="target-audience" placeholder="e.g. Young professionals who love specialty coffee" required>
+      </div>
+      <div class="form-group mb-16">
+        <label class="form-label" for="campaign-goal">Goal</label>
+        <input class="form-input" id="campaign-goal" placeholder="e.g. Drive foot traffic to our new location" required>
+      </div>
+
+      <label class="form-label">Platforms</label>
+      <div class="platform-grid">
+        <label class="platform-chip"><input type="checkbox" data-platform-checkbox value="facebook"><span class="material-icons">thumb_up</span><span class="platform-chip-label">Facebook</span></label>
+        <label class="platform-chip"><input type="checkbox" data-platform-checkbox value="instagram"><span class="material-icons">photo_camera</span><span class="platform-chip-label">Instagram</span></label>
+        <label class="platform-chip"><input type="checkbox" data-platform-checkbox value="linkedin"><span class="material-icons">work</span><span class="platform-chip-label">LinkedIn</span></label>
+        <label class="platform-chip"><input type="checkbox" data-platform-checkbox value="x"><span class="material-icons">tag</span><span class="platform-chip-label">X</span></label>
+        <label class="platform-chip"><input type="checkbox" data-platform-checkbox value="threads"><span class="material-icons">forum</span><span class="platform-chip-label">Threads</span></label>
+        <label class="platform-chip"><input type="checkbox" data-platform-checkbox value="pinterest"><span class="material-icons">push_pin</span><span class="platform-chip-label">Pinterest</span></label>
+      </div>
+
+      <label class="form-label">Number of Days</label>
+      <div class="days-grid">
+        <label><input type="radio" name="days" value="7" checked><span>7 Days</span></label>
+        <label><input type="radio" name="days" value="14"><span>14 Days</span></label>
+        <label><input type="radio" name="days" value="30"><span>30 Days</span></label>
+      </div>
+      <input type="hidden" id="campaign-days" value="7">
+
+      <button type="submit" class="btn btn-primary btn-new-campaign mt-16">
+        <span class="material-icons">auto_awesome</span> Generate Campaign
+      </button>
+    </form>
+  </div>
+
+  <!-- =========================  AI WORKFLOW  ========================= -->
+  <div data-view="workflow" style="display:none;">
+    <div class="workflow-container">
+      <div class="workflow-glow" style="top:60px;left:20%;"></div>
+      <div class="workflow-glow" style="bottom:0;right:10%;"></div>
+      <span class="material-icons" style="font-size:44px;color:var(--primary);">auto_awesome</span>
+      <h2 class="mt-8">Building your campaign…</h2>
+      <p class="text-sm text-muted">Vivy AI is working through each step — this usually takes under a minute.</p>
+      <div class="workflow-steps" id="workflow-steps"></div>
+    </div>
+  </div>
+
+  <!-- =========================  CALENDAR  ========================= -->
+  <div data-view="calendar" style="display:none;">
+    <h2 class="mb-16">Content Calendar</h2>
+    <div id="calendar-container"></div>
+  </div>
+
+  <!-- =========================  CONNECTED ACCOUNTS  ========================= -->
+  <div data-view="accounts" style="display:none;">
+    <h2 class="mb-8">Connected Accounts</h2>
+    <p class="text-sm text-muted mb-16">Phase 1: connection status is UI-only. Real platform login is coming in Phase 2.</p>
+    <div id="accounts-container"></div>
+  </div>
+
+  <!-- =========================  ANALYTICS  ========================= -->
+  <div data-view="analytics" style="display:none;">
+    <h2 class="mb-16">Analytics Overview</h2>
+    <div class="analytics-grid">
+      <div class="card mkt-stat-card"><div class="mkt-stat-value" id="stat-total-campaigns">0</div><div class="mkt-stat-label">Total Campaigns</div></div>
+      <div class="card mkt-stat-card"><div class="mkt-stat-value" id="stat-generated-posts">0</div><div class="mkt-stat-label">Generated Posts</div></div>
+      <div class="card mkt-stat-card"><div class="mkt-stat-value" id="stat-scheduled-posts">0</div><div class="mkt-stat-label">Scheduled Posts</div></div>
+      <div class="card mkt-stat-card"><div class="mkt-stat-value" id="stat-published-posts">0</div><div class="mkt-stat-label">Published Posts</div></div>
+    </div>
+    <div class="card mkt-stat-card mb-16"><div class="mkt-stat-value" id="stat-estimated-reach">0</div><div class="mkt-stat-label">Estimated Reach (demo)</div></div>
+
+    <div class="card analytics-chart-card">
+      <h3 class="mb-8">Posts per Platform</h3>
+      <canvas id="platform-chart"></canvas>
+    </div>
+    <div class="card analytics-chart-card">
+      <h3 class="mb-8">Growth Trend <span class="text-sm text-muted">(sample data)</span></h3>
+      <canvas id="growth-chart"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- Post editor modal -->
+<div id="post-editor-modal" class="mkt-modal-overlay">
+  <div class="glass-card">
+    <h3 class="mb-16">Edit Post</h3>
+    <div class="form-group mb-16">
+      <label class="form-label">Caption</label>
+      <textarea class="form-input" id="editor-caption" rows="4"></textarea>
+    </div>
+    <div class="form-group mb-16">
+      <label class="form-label">Call To Action</label>
+      <input class="form-input" id="editor-cta">
+    </div>
+    <div class="form-group mb-16">
+      <label class="form-label">Hashtags</label>
+      <input class="form-input" id="editor-hashtags" placeholder="#example #tags">
+    </div>
+    <div class="form-group mb-16">
+      <label class="form-label">Image Prompt</label>
+      <textarea class="form-input" id="editor-image-prompt" rows="2"></textarea>
+    </div>
+    <div class="form-group mb-16">
+      <label class="form-label">Status</label>
+      <select class="form-select" id="editor-status">
+        <option value="draft">Draft</option>
+        <option value="scheduled">Scheduled</option>
+        <option value="published">Published</option>
+      </select>
+    </div>
+    <div class="flex gap-8">
+      <button class="btn btn-outline" onclick="document.getElementById('post-editor-modal').style.display='none'">Cancel</button>
+      <button class="btn btn-primary" onclick="VivyCalendar.saveEditor()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Reschedule modal -->
+<div id="reschedule-modal" class="mkt-modal-overlay">
+  <div class="glass-card">
+    <h3 class="mb-16">Reschedule Post</h3>
+    <div class="form-group mb-16">
+      <label class="form-label">New Date</label>
+      <input class="form-input" type="date" id="reschedule-date">
+    </div>
+    <div class="flex gap-8">
+      <button class="btn btn-outline" onclick="document.getElementById('reschedule-modal').style.display='none'">Cancel</button>
+      <button class="btn btn-primary" onclick="VivyCalendar.saveReschedule()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="../firebase-config.js"></script>
+<script src="../utils.js"></script>
+<script src="../auth.js"></script>
+<script src="../js/firebase-marketing.js"></script>
+<script src="../js/campaigns.js"></script>
+<script src="../js/calendar.js"></script>
+<script src="../js/analytics.js"></script>
+<script src="../js/marketing-agent.js"></script>
+</body>
+</html>

@@ -1,0 +1,371 @@
+/* ==========================================================================
+   VIVY AI — css/marketing-agent.css
+   Styles for the Marketing Agent feature. Built entirely on the existing
+   design tokens from ../styles.css (--primary, --surface, --border, etc.)
+   so it matches the rest of the app automatically in both dark and light
+   mode — nothing here hardcodes a color that isn't a CSS variable.
+   ========================================================================== */
+
+/* -----------------------------  TOP TABS  ----------------------------- */
+.mkt-tabs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 4px 0 14px;
+}
+.mkt-tab {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 16px;
+  border-radius: 12px;
+  background: var(--surface-solid);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.mkt-tab.active {
+  background: linear-gradient(135deg, var(--primary), var(--primary-2));
+  color: #fff;
+  border-color: transparent;
+}
+
+/* -----------------------------  DASHBOARD STAT GRID  ----------------------------- */
+.mkt-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.mkt-stat-card {
+  text-align: center;
+}
+.mkt-stat-value {
+  font-size: 1.6rem;
+  font-weight: 800;
+  background: linear-gradient(135deg, var(--primary), var(--accent));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.mkt-stat-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+/* -----------------------------  NEW CAMPAIGN BUTTON  ----------------------------- */
+.btn-new-campaign {
+  width: 100%;
+  padding: 18px;
+  font-size: 1rem;
+  border-radius: 18px;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+/* -----------------------------  CAMPAIGN LIST  ----------------------------- */
+.campaign-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+.campaign-card-title {
+  font-weight: 700;
+}
+
+/* -----------------------------  CAMPAIGN FORM  ----------------------------- */
+.platform-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.platform-chip {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 8px;
+  border-radius: 14px;
+  background: var(--surface-solid);
+  border: 1.5px solid var(--border);
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+}
+.platform-chip.selected {
+  border-color: var(--primary);
+  background: rgba(139, 92, 246, 0.12);
+}
+.platform-chip input {
+  position: absolute;
+  opacity: 0;
+  inset: 0;
+  cursor: pointer;
+}
+.platform-chip .material-icons {
+  font-size: 22px;
+  color: var(--primary);
+}
+.platform-chip-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+.days-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.days-grid label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  border-radius: 14px;
+  background: var(--surface-solid);
+  border: 1.5px solid var(--border);
+  font-weight: 700;
+  cursor: pointer;
+}
+.days-grid input {
+  display: none;
+}
+.days-grid input:checked + span {
+  color: var(--primary);
+}
+.days-grid label:has(input:checked) {
+  border-color: var(--primary);
+  background: rgba(139, 92, 246, 0.12);
+}
+
+/* -----------------------------  AI WORKFLOW ANIMATION  ----------------------------- */
+.workflow-container {
+  text-align: center;
+  padding: 20px 0 40px;
+}
+.workflow-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 340px;
+  margin: 24px auto 0;
+  text-align: left;
+}
+.workflow-step {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 6px;
+  opacity: 0.4;
+  transition: opacity 0.3s;
+}
+.workflow-step.active,
+.workflow-step.done {
+  opacity: 1;
+}
+.wf-dot {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--surface-solid);
+  border: 1.5px solid var(--border);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.workflow-step.active .wf-dot {
+  border-color: var(--primary);
+}
+.workflow-step.done .wf-dot {
+  background: var(--success);
+  border-color: var(--success);
+}
+.wf-check {
+  display: none;
+  font-size: 16px;
+  color: #fff;
+}
+.workflow-step.done .wf-check {
+  display: block;
+}
+.wf-spinner {
+  display: none;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: mkt-spin 0.7s linear infinite;
+}
+.workflow-step.active .wf-spinner {
+  display: block;
+}
+.wf-label {
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+@keyframes mkt-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Floating gradient blobs behind the workflow view for a "premium" feel */
+.workflow-glow {
+  position: absolute;
+  width: 260px;
+  height: 260px;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.35;
+  pointer-events: none;
+  z-index: -1;
+  background: linear-gradient(135deg, var(--primary), var(--accent));
+  animation: mkt-float 6s ease-in-out infinite;
+}
+@keyframes mkt-float {
+  0%, 100% { transform: translate(0, 0); }
+  50% { transform: translate(20px, -20px); }
+}
+
+/* -----------------------------  CONTENT CALENDAR  ----------------------------- */
+.calendar-day {
+  margin-bottom: 22px;
+}
+.calendar-day-label {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  padding-left: 2px;
+}
+.calendar-posts {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.post-card {
+  background: var(--surface-solid);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 14px;
+}
+.post-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.post-platform-icon {
+  font-size: 18px;
+  color: var(--primary);
+}
+.post-platform-name {
+  font-weight: 700;
+  font-size: 0.82rem;
+  flex: 1;
+}
+.post-status {
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 20px;
+  text-transform: capitalize;
+}
+.status-draft { background: rgba(182, 174, 209, 0.15); color: var(--text-muted); }
+.status-scheduled { background: rgba(96, 165, 250, 0.15); color: var(--info); }
+.status-published { background: rgba(52, 211, 153, 0.15); color: var(--success); }
+.status-active { background: rgba(52, 211, 153, 0.15); color: var(--success); }
+.post-caption {
+  font-size: 0.85rem;
+  color: var(--text);
+  margin-bottom: 8px;
+  line-height: 1.5;
+}
+.post-hashtags {
+  font-size: 0.75rem;
+  color: var(--primary);
+  margin-bottom: 10px;
+}
+.post-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+.post-actions .btn-icon {
+  width: 34px;
+  height: 34px;
+}
+
+/* -----------------------------  CONNECTED ACCOUNTS  ----------------------------- */
+.account-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 10px;
+}
+.account-info {
+  flex: 1;
+}
+.account-name {
+  font-weight: 700;
+}
+.account-status {
+  font-size: 0.78rem;
+}
+.text-success { color: var(--success); }
+
+/* -----------------------------  ANALYTICS  ----------------------------- */
+.analytics-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.analytics-chart-card {
+  margin-bottom: 16px;
+}
+.analytics-chart-card canvas {
+  max-height: 220px;
+}
+
+/* -----------------------------  MODALS  ----------------------------- */
+.mkt-modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 300;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.mkt-modal-overlay .glass-card {
+  max-width: 440px;
+  width: 100%;
+  max-height: 85vh;
+  overflow-y: auto;
+  padding: 24px;
+}
+
+/* -----------------------------  AI SUGGESTIONS  ----------------------------- */
+.suggestion-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.suggestion-card .material-icons {
+  color: var(--warning);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
