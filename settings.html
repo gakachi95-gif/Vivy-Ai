@@ -94,6 +94,7 @@
   <a href="settings.html" data-nav-link class="active"><span class="material-icons">settings</span>Settings</a>
 </nav>
 
+<script src="https://checkout.flutterwave.com/v3.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
@@ -132,10 +133,51 @@
     showNotification("success", "Language preference saved.");
   });
 
-  async function upgradeToPremium() {
-    // Architecture hook: in production this opens a payment flow (Stripe/RevenueCat/etc.)
-    // then a webhook/cloud function sets plan:'premium' on the user's Firestore doc.
-    showNotification("info", "Premium checkout is coming soon! This will unlock unlimited AI, no ads, and priority responses.");
+  function upgradeToPremium() {
+    FlutterwaveCheckout({
+      public_key: FLW_CONFIG.publicKey,
+      tx_ref: "vivy-" + settingsUser.uid + "-" + Date.now(),
+      amount: FLW_CONFIG.premiumPriceNGN,
+      currency: FLW_CONFIG.currency,
+      payment_options: "card,mobilemoney,ussd",
+      customer: {
+        email: settingsUser.email,
+        name: settingsUser.displayName || "Vivy User"
+      },
+      meta: { uid: settingsUser.uid }, // read by the webhook backup path
+      customizations: {
+        title: "Vivy AI Premium",
+        description: "Unlock unlimited AI messages, no daily limit",
+        logo: "icons/icon-192.png"
+      },
+      callback: async function (response) {
+        if (response.status !== "successful" && response.status !== "completed") return;
+        try {
+          const res = await fetch(FLW_CONFIG.verifyEndpoint, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              transaction_id: response.transaction_id,
+              uid: settingsUser.uid,
+              expectedAmount: FLW_CONFIG.premiumPriceNGN
+            })
+          });
+          const data = await res.json().catch(() => ({}));
+          if (data.success) {
+            showNotification("success", "You're now on Premium! Enjoy unlimited AI.");
+            document.getElementById("plan-display").textContent = "Premium";
+            document.getElementById("plan-display").className = "plan-badge plan-premium";
+          } else {
+            showNotification("error", data.message || "Payment could not be verified. Contact support if you were charged.");
+          }
+        } catch (e) {
+          showNotification("error", "Could not reach the server to verify payment. Contact support if you were charged.");
+        }
+      },
+      onclose: function () {
+        // Checkout closed without completing — no action needed.
+      }
+    });
   }
 
   async function clearHistory() {
@@ -184,4 +226,4 @@
   }
 </script>
 </body>
-</html>
+                                                                                                                                                     </html>
