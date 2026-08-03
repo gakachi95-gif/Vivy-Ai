@@ -13,7 +13,8 @@ const VivyCalendar = {
     linkedin: "work",
     x: "tag",
     threads: "forum",
-    pinterest: "push_pin"
+    pinterest: "push_pin",
+    wordpress: "rss_feed"
   },
 
   STATUS_LABELS: { draft: "Draft", scheduled: "Scheduled", published: "Published" },
@@ -70,9 +71,11 @@ const VivyCalendar = {
         <p class="post-caption">${sanitizeInput(post.caption).slice(0, 140)}${post.caption.length > 140 ? "…" : ""}</p>
         <div class="post-hashtags">${(post.hashtags || []).slice(0, 4).map((h) => `<span>${sanitizeInput(h)}</span>`).join(" ")}</div>
         <div class="post-actions">
+          <button class="btn-icon" title="Copy" onclick="VivyCalendar.copyToClipboard('${post.campaignId}','${post.id}')"><span class="material-icons">content_paste</span></button>
           <button class="btn-icon" title="Edit" onclick="VivyCalendar.openEditor('${post.campaignId}','${post.id}')"><span class="material-icons">edit</span></button>
           <button class="btn-icon" title="Duplicate" onclick="VivyCalendar.duplicate('${post.campaignId}','${post.id}')"><span class="material-icons">content_copy</span></button>
           <button class="btn-icon" title="Reschedule" onclick="VivyCalendar.openReschedule('${post.campaignId}','${post.id}')"><span class="material-icons">event</span></button>
+          <button class="btn-icon" title="Publish now" onclick="VivyCalendar.publish('${post.campaignId}','${post.id}')"><span class="material-icons">send</span></button>
           <button class="btn-icon" title="Delete" onclick="VivyCalendar.remove('${post.campaignId}','${post.id}')"><span class="material-icons">delete</span></button>
         </div>
       </div>`;
@@ -113,6 +116,7 @@ const VivyCalendar = {
     document.getElementById("editor-cta").value = post.cta;
     document.getElementById("editor-hashtags").value = (post.hashtags || []).join(" ");
     document.getElementById("editor-image-prompt").value = post.imagePrompt;
+    document.getElementById("editor-image-url").value = post.imageUrl || "";
     document.getElementById("editor-status").value = post.status;
     document.getElementById("post-editor-modal").dataset.campaignId = campaignId;
     document.getElementById("post-editor-modal").dataset.postId = postId;
@@ -127,6 +131,7 @@ const VivyCalendar = {
       cta: cleanText(document.getElementById("editor-cta").value, 200),
       hashtags: document.getElementById("editor-hashtags").value.match(/#[\w]+/g) || [],
       imagePrompt: cleanText(document.getElementById("editor-image-prompt").value, 500),
+      imageUrl: cleanText(document.getElementById("editor-image-url").value, 500),
       status: document.getElementById("editor-status").value
     });
     modal.style.display = "none";
@@ -144,6 +149,33 @@ const VivyCalendar = {
     document.getElementById("reschedule-modal").style.display = "flex";
   },
 
+  /** Formats a post as ready-to-paste text: caption, CTA, then hashtags on their own line. */
+  formatForCopy(post) {
+    return [post.caption, post.cta, (post.hashtags || []).join(" ")].filter(Boolean).join("\n\n");
+  },
+
+  /**
+   * Copies the post's full text to the clipboard for manual posting —
+   * the practical option for platforms without a real publish connection
+   * yet (or when you'd simply rather post it yourself).
+   */
+  async copyToClipboard(campaignId, postId) {
+    const posts = await VivyMarketing.getPosts(this._uid, campaignId);
+    const post = posts.find((p) => p.id === postId);
+    if (!post) return;
+
+    try {
+      await navigator.clipboard.writeText(this.formatForCopy(post));
+      showNotification("success", `Copied! Paste it into ${VivyCampaigns.PLATFORM_LABELS[post.platform] || "your platform"} to post it.`);
+      if (confirm("Mark this post as published now that you've copied it?")) {
+        await VivyMarketing.updatePost(this._uid, campaignId, postId, { status: "published" });
+        if (this._onChange) this._onChange();
+      }
+    } catch (err) {
+      showNotification("error", "Couldn't copy to clipboard. Please copy the text manually from Edit.");
+    }
+  },
+
   async saveReschedule() {
     const modal = document.getElementById("reschedule-modal");
     const { campaignId, postId } = modal.dataset;
@@ -153,5 +185,70 @@ const VivyCalendar = {
     modal.style.display = "none";
     showNotification("success", "Post rescheduled.");
     if (this._onChange) this._onChange();
+  },
+
+  /**
+   * Publishes a post right now to its real connected account. Facebook,
+   * Instagram, LinkedIn, Pinterest, Tumblr, and WordPress are all wired to
+   * real backend endpoints. X and Threads are still Phase 1 UI-only, per
+   * the Accounts tab.
+   */
+  async publish(campaignId, postId) {
+    const posts = await VivyMarketing.getPosts(this._uid, campaignId);
+    const post = posts.find((p) => p.id === postId);
+    if (!post) return;
+
+    const supported = ["facebook", "instagram", "linkedin", "pinterest", "tumblr", "wordpress"];
+    if (!supported.includes(post.platform)) {
+      showNotification("info", `Publishing to ${VivyCampaigns.PLATFORM_LABELS[post.platform] || post.platform} isn't connected yet — that's coming in a future update.`);
+      return;
+    }
+
+    if (!confirm(`Publish this post to ${VivyCampaigns.PLATFORM_LABELS[post.platform]} right now?`)) return;
+
+    try {
+      const user = firebase.auth().currentUser;
+      const token = await user.getIdToken();
+      const message = [post.caption, post.cta, (post.hashtags || []).join(" ")].filter(Boolean).join("\n\n");
+
+      let body;
+      switch (post.platform) {
+        case "instagram":
+          body = { caption: message, imageUrl: post.imageUrl };
+          break;
+        case "facebook":
+          body = { message, imageUrl: post.imageUrl || undefined };
+          break;
+        case "linkedin":
+          body = { message };
+          break;
+        case "pinterest":
+          body = { title: post.cta || VivyCampaigns.PLATFORM_LABELS.pinterest, description: message, imageUrl: post.imageUrl };
+          break;
+        case "tumblr":
+          body = { message, imageUrl: post.imageUrl || undefined, tags: post.hashtags?.map((h) => h.replace("#", "")) };
+          break;
+        case "wordpress":
+          body = { title: post.cta || "New post from Vivy AI", content: post.caption };
+          break;
+      }
+
+      const res = await fetch(`${VIVY_API_BASE}/publish/${post.platform}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify(body)
+      });
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || `Publish failed (${res.status}).`);
+      }
+
+      await VivyMarketing.updatePost(this._uid, campaignId, postId, { status: "published" });
+      showNotification("success", "Published!");
+      if (this._onChange) this._onChange();
+    } catch (err) {
+      showNotification("error", err.message || "Failed to publish. Please try again.");
+    }
   }
 };

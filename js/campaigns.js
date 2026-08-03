@@ -14,7 +14,8 @@ const VivyCampaigns = {
     linkedin: "LinkedIn",
     x: "X",
     threads: "Threads",
-    pinterest: "Pinterest"
+    pinterest: "Pinterest",
+    wordpress: "WordPress"
   },
 
   /**
@@ -95,7 +96,7 @@ const VivyCampaigns = {
         cta: cleanText(cta, 200),
         hashtags: (hashtagsRaw.match(/#[\w]+/g) || []),
         imagePrompt: cleanText(imagePrompt, 500),
-        status: "draft"
+        status: "scheduled"
       });
     }
     return posts.sort((a, b) => a.day - b.day);

@@ -93,6 +93,7 @@ const VivyMarketing = {
         cta: post.cta,
         hashtags: post.hashtags || [],
         imagePrompt: post.imagePrompt,
+        imageUrl: post.imageUrl || "",
         status: post.status || "draft",
         createdAt: firebase.firestore.FieldValue.serverTimestamp(),
         updatedAt: firebase.firestore.FieldValue.serverTimestamp()
@@ -154,7 +155,7 @@ const VivyMarketing = {
     return db.collection("users").doc(uid).collection("marketingSettings").doc("connectedAccounts");
   },
 
-  DEFAULT_PLATFORMS: ["facebook", "instagram", "linkedin", "x", "pinterest", "threads"],
+  DEFAULT_PLATFORMS: ["facebook", "instagram", "linkedin", "x", "pinterest", "threads", "wordpress"],
 
   async getConnectedAccounts(uid) {
     const snap = await this.settingsRef(uid).get();

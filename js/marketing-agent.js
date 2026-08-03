@@ -18,7 +18,32 @@ let mktUser = null;
   await refreshCalendarAndDashboard();
   await renderConnectedAccounts();
   showView("dashboard");
+  handleOAuthRedirectParams();
 })();
+
+/** Reads ?connected=facebook or ?connect_error=... left by the backend's OAuth callback redirect. */
+function handleOAuthRedirectParams() {
+  const params = new URLSearchParams(window.location.search);
+  const connected = params.get("connected");
+  const error = params.get("connect_error");
+
+  if (connected) {
+    showNotification("success", `${VivyCampaigns.PLATFORM_LABELS[connected] || connected} connected!`);
+    renderConnectedAccounts();
+  } else if (error) {
+    const messages = {
+      no_pages: "No Facebook Pages found on that account. You need to manage at least one Page to connect.",
+      server_error: "Something went wrong connecting Facebook. Please try again.",
+      missing_params: "The connection request was incomplete. Please try again."
+    };
+    showNotification("error", messages[error] || "Facebook connection was cancelled or failed.");
+  }
+
+  if (connected || error) {
+    // Clean the query string so a page refresh doesn't re-trigger the toast.
+    window.history.replaceState(null, "", window.location.pathname);
+  }
+}
 
 /* -----------------------------  VIEW SWITCHING  ------------------------------- */
 function showView(name) {
@@ -46,9 +71,64 @@ async function refreshCalendarAndDashboard() {
 
   renderCampaignList(campaigns);
   VivyCalendar.render(document.getElementById("calendar-container"), posts);
+  renderDuePosts(posts);
 
   window._mktCampaigns = campaigns;
   window._mktPosts = posts;
+}
+
+/** Posts scheduled for today or earlier that haven't been published yet. */
+function getDuePosts(posts) {
+  const today = new Date().toISOString().slice(0, 10);
+  return posts.filter((p) => p.status === "scheduled" && p.date <= today);
+}
+
+function renderDuePosts(posts) {
+  const due = getDuePosts(posts);
+  const section = document.getElementById("due-posts-section");
+  const list = document.getElementById("due-posts-list");
+
+  if (due.length === 0) {
+    section.style.display = "none";
+    return;
+  }
+
+  section.style.display = "block";
+  list.innerHTML = due
+    .map(
+      (p) => `
+      <div class="card post-card">
+        <div class="post-card-head">
+          <span class="material-icons post-platform-icon">${VivyCalendar.PLATFORM_ICONS[p.platform] || "public"}</span>
+          <span class="post-platform-name">${sanitizeInput(VivyCampaigns.PLATFORM_LABELS[p.platform] || p.platform)}</span>
+          <span class="post-status status-scheduled">${p.date}</span>
+        </div>
+        <p class="post-caption">${sanitizeInput(p.caption).slice(0, 140)}${p.caption.length > 140 ? "…" : ""}</p>
+        <div class="post-actions">
+          <button class="btn btn-primary" style="flex:1;" onclick="VivyCalendar.copyToClipboard('${p.campaignId}','${p.id}')"><span class="material-icons">content_paste</span> Copy & Post</button>
+        </div>
+      </div>`
+    )
+    .join("");
+
+  notifyDuePosts(due.length);
+}
+
+/** Best-effort browser notification while the tab is open/backgrounded — not a background push. */
+let _notifiedDueCount = 0;
+async function notifyDuePosts(count) {
+  if (!("Notification" in window) || count === 0 || count === _notifiedDueCount) return;
+  _notifiedDueCount = count;
+
+  if (Notification.permission === "default") {
+    await Notification.requestPermission();
+  }
+  if (Notification.permission === "granted") {
+    new Notification("Vivy AI Marketing Agent", {
+      body: `You have ${count} post${count > 1 ? "s" : ""} ready to publish today. Open the app to copy and post them.`,
+      icon: "../icons/icon-192.png"
+    });
+  }
 }
 
 function renderCampaignList(campaigns) {
@@ -157,7 +237,7 @@ function updateWorkflowStep(activeIndex) {
 /* -----------------------------  CONNECTED ACCOUNTS  ------------------------------- */
 async function renderConnectedAccounts() {
   const accounts = await VivyMarketing.getConnectedAccounts(mktUser.uid);
-  const icons = { facebook: "thumb_up", instagram: "photo_camera", linkedin: "work", x: "tag", pinterest: "push_pin", threads: "forum" };
+  const icons = { facebook: "thumb_up", instagram: "photo_camera", linkedin: "work", x: "tag", pinterest: "push_pin", threads: "forum", wordpress: "rss_feed" };
   const container = document.getElementById("accounts-container");
 
   container.innerHTML = VivyMarketing.DEFAULT_PLATFORMS.map((platform) => {
@@ -178,13 +258,99 @@ async function renderConnectedAccounts() {
 }
 
 async function toggleAccount(platform, connect) {
-  // Phase 1: UI-only placeholder. Real OAuth flow per platform is a Phase 2 integration —
-  // this just records the intended state so the UI and Firestore schema are ready for it.
+  const OAUTH_PLATFORMS = ["facebook", "instagram", "linkedin", "pinterest", "tumblr"];
+
+  if (OAUTH_PLATFORMS.includes(platform)) {
+    // Facebook and Instagram share one OAuth flow (Instagram links automatically
+    // via the connected Facebook Page), so both route through /auth/facebook/*.
+    const authPlatform = platform === "instagram" ? "facebook" : platform;
+
+    if (!connect) {
+      const label = platform === "instagram" ? "Facebook and Instagram" : VivyCampaigns.PLATFORM_LABELS[platform];
+      if (!confirm(`Disconnect ${label}?`)) return;
+      try {
+        const token = await mktUser.getIdToken();
+        const res = await fetch(`${VIVY_API_BASE}/auth/${authPlatform}/disconnect`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` }
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.success) throw new Error(data.message || "Disconnect failed.");
+        showNotification("success", "Disconnected.");
+        await renderConnectedAccounts();
+      } catch (err) {
+        showNotification("error", err.message || "Could not disconnect. Please try again.");
+      }
+      return;
+    }
+
+    // Connecting is a full-page redirect to that platform's consent screen, so we
+    // pass the Firebase ID token as a query param — the backend verifies it
+    // before minting a signed state and handing off to the platform.
+    const token = await mktUser.getIdToken();
+    window.location.href = `${VIVY_API_BASE}/auth/${authPlatform}/start?idToken=${encodeURIComponent(token)}`;
+    return;
+  }
+
+  if (platform === "wordpress") {
+    if (!connect) {
+      if (!confirm("Disconnect WordPress?")) return;
+      try {
+        const token = await mktUser.getIdToken();
+        const res = await fetch(`${VIVY_API_BASE}/wordpress/disconnect`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` }
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.success) throw new Error(data.message || "Disconnect failed.");
+        showNotification("success", "Disconnected.");
+        await renderConnectedAccounts();
+      } catch (err) {
+        showNotification("error", err.message || "Could not disconnect. Please try again.");
+      }
+      return;
+    }
+    document.getElementById("wordpress-connect-modal").style.display = "flex";
+    return;
+  }
+
+  // Phase 1: UI-only placeholder for the remaining platforms (X, Threads). Real
+  // OAuth follows the same pattern as Facebook/LinkedIn/Pinterest/Tumblr above
+  // whenever you're ready to add them.
   await VivyMarketing.setAccountConnected(mktUser.uid, platform, connect, connect ? `@your-${platform}-handle` : "");
   showNotification("info", connect
-    ? `${VivyCampaigns.PLATFORM_LABELS[platform]} marked as connected (demo — real login coming in Phase 2).`
+    ? `${VivyCampaigns.PLATFORM_LABELS[platform]} marked as connected (demo — real login coming soon).`
     : `${VivyCampaigns.PLATFORM_LABELS[platform]} disconnected.`);
   await renderConnectedAccounts();
+}
+
+/** Submits the WordPress connect form (Application Password credentials, not OAuth). */
+async function saveWordPressConnect() {
+  const siteUrl = cleanText(document.getElementById("wp-site-url").value, 200);
+  const username = cleanText(document.getElementById("wp-username").value, 100);
+  const applicationPassword = document.getElementById("wp-app-password").value.trim();
+
+  if (!siteUrl || !username || !applicationPassword) {
+    showNotification("warning", "Please fill in all three fields.");
+    return;
+  }
+
+  try {
+    const token = await mktUser.getIdToken();
+    const res = await fetch(`${VIVY_API_BASE}/wordpress/connect`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+      body: JSON.stringify({ siteUrl, username, applicationPassword })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.success) throw new Error(data.message || "Connection failed.");
+
+    document.getElementById("wordpress-connect-modal").style.display = "none";
+    showNotification("success", "WordPress connected!");
+    await renderConnectedAccounts();
+  } catch (err) {
+    showNotification("error", err.message || "Could not connect to WordPress.");
+  }
 }
 
 /* -----------------------------  ANALYTICS  ------------------------------- */
