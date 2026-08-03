@@ -49,6 +49,12 @@
       <div class="suggestion-card"><span class="material-icons">lightbulb</span><p class="text-sm">Review each generated caption before scheduling — small edits for your brand voice go a long way.</p></div>
     </div>
 
+    <div id="due-posts-section" style="display:none;">
+      <h3 class="mb-8">📋 Ready to Post Today</h3>
+      <p class="text-sm text-muted mb-8">Copy each one and paste it into the platform yourself — publishing isn't automatic for every platform yet.</p>
+      <div id="due-posts-list" class="mb-16"></div>
+    </div>
+
     <h3 class="mb-8">Your Campaigns</h3>
     <div id="campaign-list"></div>
   </div>
@@ -88,6 +94,7 @@
         <label class="platform-chip"><input type="checkbox" data-platform-checkbox value="x"><span class="material-icons">tag</span><span class="platform-chip-label">X</span></label>
         <label class="platform-chip"><input type="checkbox" data-platform-checkbox value="threads"><span class="material-icons">forum</span><span class="platform-chip-label">Threads</span></label>
         <label class="platform-chip"><input type="checkbox" data-platform-checkbox value="pinterest"><span class="material-icons">push_pin</span><span class="platform-chip-label">Pinterest</span></label>
+        <label class="platform-chip"><input type="checkbox" data-platform-checkbox value="wordpress"><span class="material-icons">rss_feed</span><span class="platform-chip-label">WordPress</span></label>
       </div>
 
       <label class="form-label">Number of Days</label>
@@ -172,6 +179,10 @@
       <textarea class="form-input" id="editor-image-prompt" rows="2"></textarea>
     </div>
     <div class="form-group mb-16">
+      <label class="form-label">Image URL <span class="text-muted">(required to publish to Instagram)</span></label>
+      <input class="form-input" id="editor-image-url" placeholder="https://...">
+    </div>
+    <div class="form-group mb-16">
       <label class="form-label">Status</label>
       <select class="form-select" id="editor-status">
         <option value="draft">Draft</option>
@@ -197,6 +208,30 @@
     <div class="flex gap-8">
       <button class="btn btn-outline" onclick="document.getElementById('reschedule-modal').style.display='none'">Cancel</button>
       <button class="btn btn-primary" onclick="VivyCalendar.saveReschedule()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- WordPress connect modal (Application Password credentials, not OAuth) -->
+<div id="wordpress-connect-modal" class="mkt-modal-overlay">
+  <div class="glass-card">
+    <h3 class="mb-8">Connect WordPress</h3>
+    <p class="text-sm text-muted mb-16">Self-hosted WordPress.org sites only. Generate an Application Password from your site's <strong>Users → Profile → Application Passwords</strong> screen — no developer account needed.</p>
+    <div class="form-group mb-16">
+      <label class="form-label">Site URL</label>
+      <input class="form-input" id="wp-site-url" placeholder="https://yourblog.com">
+    </div>
+    <div class="form-group mb-16">
+      <label class="form-label">Username</label>
+      <input class="form-input" id="wp-username" placeholder="your WordPress username">
+    </div>
+    <div class="form-group mb-16">
+      <label class="form-label">Application Password</label>
+      <input class="form-input" id="wp-app-password" placeholder="xxxx xxxx xxxx xxxx xxxx xxxx">
+    </div>
+    <div class="flex gap-8">
+      <button class="btn btn-outline" onclick="document.getElementById('wordpress-connect-modal').style.display='none'">Cancel</button>
+      <button class="btn btn-primary" onclick="saveWordPressConnect()">Connect</button>
     </div>
   </div>
 </div>
