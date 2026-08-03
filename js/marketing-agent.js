@@ -200,9 +200,12 @@ document.getElementById("campaign-form")?.addEventListener("submit", async (e) =
   renderWorkflowSteps();
 
   try {
-    const { posts } = await VivyCampaigns.runWorkflow(mktUser.uid, form, (stepIndex) => {
-      updateWorkflowStep(stepIndex);
-    });
+    const { posts } = await VivyCampaigns.runWorkflow(
+      mktUser.uid,
+      form,
+      (stepIndex) => updateWorkflowStep(stepIndex),
+      (done, total) => updateWorkflowProgress(done, total)
+    );
     showNotification("success", `Campaign generated with ${posts.length} posts!`);
     await refreshCalendarAndDashboard();
     showView("calendar");
@@ -222,6 +225,12 @@ function renderWorkflowSteps() {
         <div class="wf-label">${step.label}</div>
       </div>`
   ).join("");
+  document.getElementById("workflow-progress-text").textContent = "";
+}
+
+/** Shows real "X of Y days done" progress during the batched generation step. */
+function updateWorkflowProgress(done, total) {
+  document.getElementById("workflow-progress-text").textContent = `${done} of ${total} days generated…`;
 }
 
 function updateWorkflowStep(activeIndex) {
@@ -359,3 +368,4 @@ async function loadAnalytics() {
   const posts = window._mktPosts || (await VivyMarketing.getAllPosts(mktUser.uid));
   await VivyAnalytics.render(campaigns, posts);
 }
+
