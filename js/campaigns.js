@@ -1,10 +1,12 @@
 /* ==========================================================================
    VIVY AI — js/campaigns.js
    Campaign creation and the AI generation workflow. Reuses the existing
-   VivyAI.generate() wrapper from utils.js (task: "writer") rather than
-   adding a new backend route — one well-structured prompt produces the
-   whole campaign's worth of posts in a single request, which the parser
-   below splits into individual post objects.
+   VivyAI.generate() wrapper from utils.js (task: "writer"). Content is
+   generated in small BATCHES of days rather than one giant request for
+   the whole campaign — asking a free-tier model for 30 fully-detailed
+   days in a single call risks hitting token limits or timing out; batching
+   keeps every individual request small, fast, and reliable regardless of
+   campaign length.
    ========================================================================== */
 
 const VivyCampaigns = {
@@ -18,11 +20,13 @@ const VivyCampaigns = {
     wordpress: "WordPress"
   },
 
+  /** Days generated per AI call. Smaller = more reliable, more requests; tune as needed. */
+  BATCH_SIZE: 5,
+
   /**
    * The visual workflow steps shown while a campaign is generating.
-   * The first four are strategy steps folded into the single AI prompt
-   * below (Phase 1 keeps this to one request for speed/cost); the rest
-   * are real, separate operations.
+   * The first four are strategy steps folded into the batched generation
+   * calls below (Phase 1 keeps this lightweight); the rest are real steps.
    */
   WORKFLOW_STEPS: [
     { key: "analysis", label: "Business Analysis" },
@@ -37,22 +41,29 @@ const VivyCampaigns = {
     { key: "save", label: "Saving Campaign" }
   ],
 
+  /** Assigns a platform to every day up front, rotating through the selected platforms in order. */
+  buildDayPlatformPairs(form) {
+    const pairs = [];
+    for (let day = 1; day <= form.days; day++) {
+      pairs.push({ day, platform: form.platforms[(day - 1) % form.platforms.length] });
+    }
+    return pairs;
+  },
+
   /**
-   * Builds one structured prompt asking for the campaign's entire content
-   * calendar in a single response, with a strict delimiter format so it
-   * can be parsed reliably regardless of which model is behind VivyAI.
+   * Builds a prompt for ONE batch of days only. Pre-assigning the platform
+   * per day (rather than asking the AI to rotate them itself) makes
+   * parsing far more reliable — we already know what each block should be.
    */
-  buildPrompt(form) {
-    const platforms = form.platforms.map((p) => this.PLATFORM_LABELS[p] || p).join(", ");
+  buildBatchPrompt(form, batchPairs) {
     return [
-      `You are a senior social media marketer building a ${form.days}-day content calendar.`,
+      `You are a senior social media marketer writing part of a content calendar.`,
       `Business name: ${form.businessName}`,
       `Business description: ${form.businessDescription}`,
       `Target audience: ${form.targetAudience}`,
       `Campaign goal: ${form.goal}`,
-      `Platforms to rotate across (one platform per day, in order, repeating): ${platforms}`,
       ``,
-      `For EACH of the ${form.days} days, output a block in EXACTLY this format, with nothing else before or after:`,
+      `Generate one post for EACH of the following day/platform pairs, each in EXACTLY this block format:`,
       ``,
       `### DAY <n> - <PLATFORM> ###`,
       `CAPTION: <the post caption, written for that platform's style and length norms>`,
@@ -60,20 +71,23 @@ const VivyCampaigns = {
       `HASHTAGS: <5-8 relevant hashtags, space separated, each starting with #>`,
       `IMAGE PROMPT: <a detailed prompt describing an image that would accompany this post>`,
       ``,
-      `Repeat that block for all ${form.days} days. Do not add commentary, headings, or summaries outside those blocks.`
+      `Required day/platform pairs for this batch:`,
+      ...batchPairs.map((p) => `Day ${p.day}: ${this.PLATFORM_LABELS[p.platform] || p.platform}`),
+      ``,
+      `Output exactly ${batchPairs.length} block(s), nothing else — no commentary, headings, or summaries outside those blocks.`
     ].join("\n");
   },
 
   /**
-   * Parses the AI's raw text response into structured post objects using
-   * the "### DAY n - PLATFORM ###" delimiters requested in the prompt.
-   * Falls back gracefully — a block that doesn't fully match still produces
-   * a post with whatever fields were found, rather than being dropped.
+   * Parses one batch's response into structured post objects. Falls back
+   * to the pre-assigned platform for that day if the AI's own header text
+   * doesn't clearly match one, since we already know what was requested.
    */
-  parseGeneratedContent(raw, startDate) {
+  parseGeneratedContent(raw, startDate, batchPairs = []) {
     const blocks = raw.split(/### DAY\s+(\d+)\s*-\s*([^#]+?)\s*###/gi);
     const posts = [];
-    // split() with capture groups yields: [preamble, day, platform, body, day, platform, body, ...]
+    const pairsByDay = Object.fromEntries(batchPairs.map((p) => [p.day, p.platform]));
+
     for (let i = 1; i < blocks.length; i += 3) {
       const dayNum = parseInt(blocks[i], 10);
       const platformRaw = (blocks[i + 1] || "").trim().toLowerCase();
@@ -90,7 +104,7 @@ const VivyCampaigns = {
 
       posts.push({
         day: dayNum,
-        platform: this._matchPlatform(platformRaw),
+        platform: pairsByDay[dayNum] || this._matchPlatform(platformRaw),
         date: date.toISOString().slice(0, 10),
         caption: cleanText(caption, 2000),
         cta: cleanText(cta, 200),
@@ -115,51 +129,60 @@ const VivyCampaigns = {
 
   /**
    * Runs the full workflow for a new campaign: saves the campaign doc,
-   * calls onStep(stepIndex) before each visual step so the caller can
-   * animate the UI, generates content via VivyAI, parses it, saves the
-   * posts, and marks the campaign active. Returns { campaignId, posts }.
+   * calls onStep(stepIndex) before each visual step, generates content in
+   * small batches via VivyAI (calling onProgress(done, total) after each
+   * batch so the UI can show real progress), parses and saves the posts,
+   * and marks the campaign active. Returns { campaignId, posts }.
    */
-  async runWorkflow(uid, form, onStep) {
-    const totalSteps = this.WORKFLOW_STEPS.length;
+  async runWorkflow(uid, form, onStep, onProgress) {
     const tick = async (i) => {
       if (onStep) onStep(i, this.WORKFLOW_STEPS[i]);
-      // Small delay so each strategy step is visibly readable, not instant.
-      await new Promise((r) => setTimeout(r, 450));
+      await new Promise((r) => setTimeout(r, 450)); // keep each strategy step visibly readable
     };
 
-    // Steps 0-3: business analysis / audience / keywords / strategy — visual only,
-    // folded into the single generation call below for Phase 1.
+    // Steps 0-3: business analysis / audience / keywords / strategy — visual only for Phase 1.
     for (let i = 0; i < 4; i++) await tick(i);
 
-    // Step 4: the real AI call — produces posts, hashtags, image prompts and
-    // CTAs together, but we still animate through steps 4-7 as the response
-    // is parsed, since from the user's perspective those are distinct outputs.
-    await tick(4);
-    const prompt = this.buildPrompt(form);
-    const raw = await VivyAI.generate({
-      task: "writer",
-      prompt,
-      meta: { format: "social media content calendar", tone: "marketing" }
-    });
+    // Step 4 onward: real batched generation. We stay on step 4's animation
+    // for the whole batch loop and instead report fine-grained progress via
+    // onProgress, since "days completed" is more meaningful here than which
+    // of the four sub-labels (hashtags/images/CTAs) is technically active —
+    // all four come back together in every batch anyway.
+    if (onStep) onStep(4, this.WORKFLOW_STEPS[4]);
 
-    await tick(5); // hashtags (parsed from the same response)
-    await tick(6); // image prompts (parsed from the same response)
-    await tick(7); // CTAs (parsed from the same response)
+    const dayPlatformPairs = this.buildDayPlatformPairs(form);
+    const allPosts = [];
 
-    const posts = this.parseGeneratedContent(raw, new Date());
-    if (posts.length === 0) {
+    for (let start = 0; start < dayPlatformPairs.length; start += this.BATCH_SIZE) {
+      const batchPairs = dayPlatformPairs.slice(start, start + this.BATCH_SIZE);
+      const prompt = this.buildBatchPrompt(form, batchPairs);
+
+      const raw = await VivyAI.generate({
+        task: "writer",
+        prompt,
+        meta: { format: "social media content calendar", tone: "marketing" }
+      });
+
+      const batchPosts = this.parseGeneratedContent(raw, new Date(), batchPairs);
+      allPosts.push(...batchPosts);
+
+      if (onProgress) onProgress(Math.min(start + this.BATCH_SIZE, dayPlatformPairs.length), dayPlatformPairs.length);
+    }
+
+    if (allPosts.length === 0) {
       throw new Error("The AI response couldn't be parsed into posts. Please try generating again.");
     }
 
-    // Step 8: build the content calendar (just structuring what we parsed)
-    await tick(8);
+    await tick(5); // hashtags — already included in every batch above
+    await tick(6); // image prompts — already included in every batch above
+    await tick(7); // CTAs — already included in every batch above
+    await tick(8); // build the content calendar (structuring what we parsed)
 
-    // Step 9: save everything to Firestore
-    await tick(9);
+    await tick(9); // save everything to Firestore
     const campaignId = await VivyMarketing.createCampaign(uid, form);
-    await VivyMarketing.savePosts(uid, campaignId, posts);
+    await VivyMarketing.savePosts(uid, campaignId, allPosts);
     await VivyMarketing.updateCampaign(uid, campaignId, { status: "active" });
 
-    return { campaignId, posts };
+    return { campaignId, posts: allPosts };
   }
 };
