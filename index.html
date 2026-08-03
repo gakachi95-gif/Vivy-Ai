@@ -2,27 +2,16 @@
 <html lang="en" data-theme="dark">
 <head>
 <meta charset="UTF-8">
-
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-
-<meta name="monetag" content="50d5d516cb0402c9ca4350b10ede57a8">
-
-<meta name="theme-color" content="#8b5cf6">
-
 <title>Vivy AI — Your Personal AI Assistant</title>
-
+<meta name="theme-color" content="#8b5cf6">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icons/icon-192.png">
-
 <link rel="preconnect" href="https://fonts.googleapis.com">
-
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-
 <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-
 <link rel="stylesheet" href="styles.css">
 </head>
-
 <body>
 
 <div class="splash">
@@ -38,7 +27,6 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-analytics-compat.js"></script>
-
 <script src="firebase-config.js"></script>
 <script src="utils.js"></script>
 
@@ -51,12 +39,9 @@
   // Register service worker for PWA support
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => {
-      navigator.serviceWorker
-        .register("service-worker.js")
-        .catch((e) => console.warn("SW registration failed:", e));
+      navigator.serviceWorker.register("service-worker.js").catch((e) => console.warn("SW registration failed:", e));
     });
   }
 </script>
-
 </body>
-  </html>
+</html>

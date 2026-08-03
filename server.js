@@ -23,6 +23,28 @@
      PREMIUM_DAILY_MESSAGES         e.g. 1000
      MAX_TOKENS                 e.g. 1024
      TEMPERATURE                 e.g. 0.7
+
+   Facebook/Instagram connect (Marketing Agent — Phase 2 social publishing):
+     FACEBOOK_APP_ID            from your Meta for Developers app
+     FACEBOOK_APP_SECRET        from the same app
+     FACEBOOK_REDIRECT_URI      e.g. https://vivy-ai.onrender.com/auth/facebook/callback
+     OAUTH_STATE_SECRET         any long random string
+     FRONTEND_URL               e.g. https://yourusername.github.io/Vivy-Ai
+
+   LinkedIn connect:
+     LINKEDIN_CLIENT_ID, LINKEDIN_CLIENT_SECRET
+     LINKEDIN_REDIRECT_URI      e.g. https://vivy-ai.onrender.com/auth/linkedin/callback
+
+   Pinterest connect:
+     PINTEREST_APP_ID, PINTEREST_APP_SECRET
+     PINTEREST_REDIRECT_URI    e.g. https://vivy-ai.onrender.com/auth/pinterest/callback
+
+   Tumblr connect:
+     TUMBLR_CONSUMER_KEY, TUMBLR_CONSUMER_SECRET
+     TUMBLR_REDIRECT_URI       e.g. https://vivy-ai.onrender.com/auth/tumblr/callback
+
+   WordPress: no env vars needed — connects via user-supplied Application
+   Password instead of OAuth (see routes/wordpress.js).
    ========================================================================== */
 
 require("dotenv").config();
@@ -64,6 +86,11 @@ app.use("/summarize", require("./routes/summarize"));
 app.use("/translate", require("./routes/translate"));
 app.use("/brainstorm", require("./routes/brainstorm"));
 app.use("/image-analysis", require("./routes/imageAnalysis"));
+
+// ---- Marketing Agent: Facebook/Instagram OAuth connect + publish ----
+app.use("/auth", require("./routes/socialAuth"));
+app.use("/publish", require("./routes/publish"));
+app.use("/wordpress", require("./routes/wordpress"));
 
 // ---- Payment routes (Flutterwave — unauthenticated by design, Flutterwave
 //      calls the webhook server-to-server; verify-payment is called by the
