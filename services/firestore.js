@@ -99,6 +99,38 @@ async function upgradeToPremium(uid, transactionRef) {
   );
 }
 
+/* -----------------------------  SOCIAL ACCOUNT TOKENS  ---------------------------
+   Stored under users/{uid}/socialTokens/{platform} — deliberately NOT covered
+   by any client-side Firestore security rule, so it's only ever readable via
+   this Admin SDK. The frontend only ever sees the "connected: true/false"
+   status mirrored into marketingSettings/connectedAccounts, never the token.
+   ------------------------------------------------------------------------- */
+
+/** Saves (or overwrites) a platform's access token + linked account info. */
+async function saveSocialToken(uid, platform, data) {
+  await db.collection("users").doc(uid).collection("socialTokens").doc(platform).set(
+    { ...data, updatedAt: FieldValue.serverTimestamp() },
+    { merge: true }
+  );
+}
+
+async function getSocialToken(uid, platform) {
+  const snap = await db.collection("users").doc(uid).collection("socialTokens").doc(platform).get();
+  return snap.exists ? snap.data() : null;
+}
+
+async function removeSocialToken(uid, platform) {
+  await db.collection("users").doc(uid).collection("socialTokens").doc(platform).delete();
+}
+
+/** Mirrors a safe, non-secret connection status into the client-readable doc. */
+async function setConnectedAccountStatus(uid, updates) {
+  await db.collection("users").doc(uid).collection("marketingSettings").doc("connectedAccounts").set(
+    updates,
+    { merge: true }
+  );
+}
+
 module.exports = {
   db,
   FieldValue,
@@ -108,6 +140,10 @@ module.exports = {
   hasRemainingMessages,
   incrementUsage,
   upgradeToPremium,
+  saveSocialToken,
+  getSocialToken,
+  removeSocialToken,
+  setConnectedAccountStatus,
   FREE_DAILY_MESSAGES,
   PREMIUM_DAILY_MESSAGES
 };
