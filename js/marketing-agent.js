@@ -15,8 +15,14 @@ let mktUser = null;
     cb.addEventListener("change", updatePlatformSelectionUI);
   });
 
-  await refreshCalendarAndDashboard();
-  await renderConnectedAccounts();
+  try {
+    await refreshCalendarAndDashboard();
+    await renderConnectedAccounts();
+  } catch (err) {
+    console.error("Marketing Agent init error:", err);
+    showNotification("error", err.message || "Couldn't load your Marketing Agent data. Check that your Firestore rules have been published.");
+  }
+
   showView("dashboard");
   handleOAuthRedirectParams();
 })();
@@ -367,5 +373,4 @@ async function loadAnalytics() {
   const campaigns = window._mktCampaigns || (await VivyMarketing.getCampaigns(mktUser.uid));
   const posts = window._mktPosts || (await VivyMarketing.getAllPosts(mktUser.uid));
   await VivyAnalytics.render(campaigns, posts);
-}
-
+     }
