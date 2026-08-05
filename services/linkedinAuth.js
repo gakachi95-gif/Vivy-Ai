@@ -5,7 +5,11 @@
    as current for 2026).
    ========================================================================== */
 
-const LI_VERSION_HEADER = "202504"; // LinkedIn-Version header, format YYYYMM
+// LinkedIn-Version header, format YYYYMM. LinkedIn sunsets each version after
+// ~12 months, so this is overridable via env var without a code change —
+// bump LINKEDIN_API_VERSION in Render whenever posts start failing with
+// "Requested version ... is not active".
+const LI_VERSION_HEADER = process.env.LINKEDIN_API_VERSION || "202606"; // current as of June 2026
 
 function getLinkedInAuthUrl(state) {
   const url = new URL("https://www.linkedin.com/oauth/v2/authorization");
