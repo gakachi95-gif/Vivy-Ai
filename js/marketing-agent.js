@@ -574,3 +574,49 @@ async function loadAnalytics() {
   const posts = window._mktPosts || (await VivyMarketing.getAllPosts(mktUser.uid));
   await VivyAnalytics.render(campaigns, posts);
 }
+
+/** Calls the credit-gated Growth Coach endpoint with real stats from the user's actual posts. */
+async function runGrowthCoach() {
+  const posts = window._mktPosts || [];
+  const stats = VivyAnalytics.computeGrowthStats(posts);
+
+  if (!stats) {
+    showNotification("info", "Generate a campaign first so there's real data to analyze.");
+    return;
+  }
+
+  const btn = document.getElementById("growth-coach-btn");
+  btn.disabled = true;
+  document.getElementById("growth-coach-tips").innerHTML = "";
+
+  try {
+    const token = await mktUser.getIdToken();
+    const res = await fetch(`${VIVY_API_BASE}/marketing/growth-coach`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ stats })
+    });
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok || !data.success) {
+      const err = new Error(data.message || "Failed to get advice.");
+      err.code = data.code;
+      throw err;
+    }
+
+    document.getElementById("growth-coach-tips").innerHTML = data.tips
+      .map((tip) => `<div class="suggestion-card"><span class="material-icons">lightbulb</span><p class="text-sm">${sanitizeInput(tip)}</p></div>`)
+      .join("");
+
+    await refreshCreditBalance();
+  } catch (err) {
+    if (err.code === "INSUFFICIENT_CREDITS" || err.code === "PREMIUM_REQUIRED") {
+      showNotification("warning", err.message);
+      showPaywall();
+    } else {
+      showNotification("error", err.message || "Failed to get advice. Please try again.");
+    }
+  } finally {
+    btn.disabled = false;
+  }
+}

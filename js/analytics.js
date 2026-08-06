@@ -103,5 +103,39 @@ const VivyAnalytics = {
     this.renderCounts(counts, reach);
     this.renderPlatformChart(posts);
     this.renderGrowthChart();
+  },
+
+  /**
+   * Computes real stats from the user's own posts — no fabricated
+   * engagement numbers, since there's no real click/like tracking yet.
+   * This is what gets sent to the Growth Coach for genuinely grounded advice.
+   */
+  computeGrowthStats(posts) {
+    if (posts.length === 0) return null;
+
+    const platformBreakdown = {};
+    let totalCaptionLength = 0;
+    let totalHashtags = 0;
+
+    posts.forEach((p) => {
+      platformBreakdown[p.platform] = (platformBreakdown[p.platform] || 0) + 1;
+      totalCaptionLength += (p.caption || "").length;
+      totalHashtags += (p.hashtags || []).length;
+    });
+
+    const dates = posts.map((p) => new Date(p.date).getTime()).filter((t) => !isNaN(t));
+    const daysSinceFirstPost = dates.length > 1
+      ? Math.max(1, Math.round((Math.max(...dates) - Math.min(...dates)) / (1000 * 60 * 60 * 24)))
+      : 1;
+    const postsPerWeek = Math.round((posts.length / daysSinceFirstPost) * 7 * 10) / 10;
+
+    return {
+      totalPosts: posts.length,
+      platformBreakdown,
+      avgCaptionLength: Math.round(totalCaptionLength / posts.length),
+      avgHashtagsPerPost: Math.round((totalHashtags / posts.length) * 10) / 10,
+      postsPerWeek,
+      daysSinceFirstPost
+    };
   }
 };
