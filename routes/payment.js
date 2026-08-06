@@ -13,11 +13,15 @@ const firestoreService = require("../services/firestore");
 
 /* --------------------------------------------------------------------------
    POST /verify-payment
-   Body: { transaction_id: string, uid: string, expectedAmount: number }
+   Body: { transaction_id, uid, purchaseType: "premium" | "credits", packId?, expectedAmount? }
+   For "credits" purchases, packId must match one of the live creditPacks in
+   config/pricing — the credited amount and required price both come from
+   that server-side config, never from the client, so a tampered request
+   body can't grant free credits.
    -------------------------------------------------------------------------- */
 router.post("/verify-payment", async (req, res) => {
   try {
-    const { transaction_id, uid, expectedAmount } = req.body;
+    const { transaction_id, uid, purchaseType = "premium", packId, expectedAmount } = req.body;
 
     if (!transaction_id || !uid) {
       return sendError(res, "Missing transaction_id or uid.", 400);
@@ -34,13 +38,24 @@ router.post("/verify-payment", async (req, res) => {
       return sendError(res, "Payment not verified as successful.", 400);
     }
 
+    if (purchaseType === "credits") {
+      const pricing = await firestoreService.getPricingConfig();
+      const pack = pricing.creditPacks.find((p) => p.id === packId);
+      if (!pack) return sendError(res, "Unknown credit pack.", 400);
+      if (flwData.data.amount < pack.priceNGN) {
+        return sendError(res, "Paid amount does not match the credit pack price.", 400);
+      }
+
+      await firestoreService.addCredits(uid, pack.credits, `purchase:${pack.id}`);
+      return sendSuccess(res, { message: `${pack.credits} credits added!`, creditsAdded: pack.credits });
+    }
+
     // Guard against amount tampering — reject if paid amount is less than expected
     if (expectedAmount && flwData.data.amount < expectedAmount) {
       return sendError(res, "Paid amount does not match expected plan price.", 400);
     }
 
     await firestoreService.upgradeToPremium(uid, transaction_id);
-
     return sendSuccess(res, { message: "Upgraded to Premium!" });
   } catch (err) {
     console.error("verify-payment error:", err.message);
@@ -61,9 +76,18 @@ router.post("/flutterwave-webhook", async (req, res) => {
 
     const event = req.body;
     if (event.event === "charge.completed" && event.data.status === "successful") {
-      const uid = event.data.meta?.uid; // passed as "meta" when initiating checkout
+      const meta = event.data.meta || {};
+      const uid = meta.uid; // passed as "meta" when initiating checkout
       if (uid) {
-        await firestoreService.upgradeToPremium(uid, String(event.data.id));
+        if (meta.purchaseType === "credits" && meta.packId) {
+          const pricing = await firestoreService.getPricingConfig();
+          const pack = pricing.creditPacks.find((p) => p.id === meta.packId);
+          if (pack && event.data.amount >= pack.priceNGN) {
+            await firestoreService.addCredits(uid, pack.credits, `webhook:purchase:${pack.id}`);
+          }
+        } else {
+          await firestoreService.upgradeToPremium(uid, String(event.data.id));
+        }
       }
     }
 
