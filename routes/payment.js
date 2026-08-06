@@ -50,13 +50,17 @@ router.post("/verify-payment", async (req, res) => {
       return sendSuccess(res, { message: `${pack.credits} credits added!`, creditsAdded: pack.credits });
     }
 
-    // Guard against amount tampering — reject if paid amount is less than expected
-    if (expectedAmount && flwData.data.amount < expectedAmount) {
+    const pricing = await firestoreService.getPricingConfig();
+    const planType = req.body.planType === "yearly" ? "yearly" : "monthly";
+    const expectedPrice = planType === "yearly" ? pricing.premiumYearlyNGN : pricing.premiumMonthlyNGN;
+    const durationDays = planType === "yearly" ? 365 : 30;
+
+    if (flwData.data.amount < expectedPrice) {
       return sendError(res, "Paid amount does not match expected plan price.", 400);
     }
 
-    await firestoreService.upgradeToPremium(uid, transaction_id);
-    return sendSuccess(res, { message: "Upgraded to Premium!" });
+    await firestoreService.upgradeToPremium(uid, transaction_id, durationDays);
+    return sendSuccess(res, { message: `Upgraded to Premium (${planType})!`, durationDays });
   } catch (err) {
     console.error("verify-payment error:", err.message);
     return sendError(res, "Server error verifying payment.", 500);

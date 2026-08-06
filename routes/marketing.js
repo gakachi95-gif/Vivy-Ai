@@ -16,6 +16,8 @@ const { requireCredits, requirePlanLimit } = require("../middleware/credits");
 const { generate } = require("../providers/aiService");
 const {
   getUserProfile,
+  isPremiumActive,
+  processReferralActivation,
   getPricingConfig,
   getCampaignCount,
   getConnectedAccountCount
@@ -31,15 +33,22 @@ router.use(requireFirebaseAuth);
  */
 router.get("/access", async (req, res) => {
   try {
+    // Fraud-prevention checkpoint: only counts a referral once the referred
+    // user genuinely shows up here with a verified email — can't be spoofed
+    // since email_verified comes from Firebase's own signed token, not the client.
+    await processReferralActivation(req.uid, req.firebaseUser.email_verified);
+
     const [profile, pricing, campaignCount, connectedAccountCount] = await Promise.all([
       getUserProfile(req.uid),
       getPricingConfig(),
       getCampaignCount(req.uid),
       getConnectedAccountCount(req.uid)
     ]);
+    const premiumActive = isPremiumActive(profile);
 
     return sendSuccess(res, {
-      plan: profile.plan,
+      plan: premiumActive ? "premium" : "free",
+      premiumUntil: profile.premiumUntil ? profile.premiumUntil.toDate().toISOString() : null,
       credits: profile.credits || 0,
       costs: pricing.costs,
       freePlanLimits: pricing.freePlanLimits,
@@ -48,7 +57,7 @@ router.get("/access", async (req, res) => {
       premiumYearlyNGN: pricing.premiumYearlyNGN,
       campaignCount,
       connectedAccountCount,
-      hasAnyAccess: profile.plan === "premium" || (profile.credits || 0) > 0
+      hasAnyAccess: premiumActive || (profile.credits || 0) > 0
     });
   } catch (err) {
     console.error("GET /marketing/access error:", err.message);
@@ -129,6 +138,49 @@ router.post("/analyze", requireCredits("analyzeMarketing"), async (req, res) => 
  */
 router.post("/generate-image", async (req, res) => {
   return sendError(res, "AI image generation isn't connected yet — this is a placeholder endpoint for a future update. No credits were charged.", 501);
+});
+
+/**
+ * POST /marketing/growth-coach
+ * Body: { stats: { totalPosts, platformBreakdown, avgCaptionLength,
+ *                   avgHashtagsPerPost, postsPerWeek, daysSinceFirstPost } }
+ * The frontend computes these stats from the user's own real post data
+ * (it already has it loaded) and sends the summary — the backend never
+ * fabricates numbers, and explicitly tells the AI not to invent engagement
+ * metrics we don't actually track (no real click/like data exists yet).
+ */
+router.post("/growth-coach", requireCredits("growthCoach"), async (req, res) => {
+  try {
+    const { stats } = req.body;
+    if (!stats || typeof stats !== "object") {
+      return sendError(res, "Post statistics are required.", 400);
+    }
+
+    const prompt = [
+      "You are a social media growth coach. Based ONLY on the real data below,",
+      "give 4-6 short, specific, actionable tips to improve this content strategy.",
+      "Do NOT invent engagement numbers, click counts, or audience activity times —",
+      "only give advice that logically follows from the data actually provided.",
+      "One tip per line, no numbering, no preamble.",
+      "",
+      `Total posts generated: ${stats.totalPosts}`,
+      `Posts per platform: ${JSON.stringify(stats.platformBreakdown)}`,
+      `Average caption length: ${stats.avgCaptionLength} characters`,
+      `Average hashtags per post: ${stats.avgHashtagsPerPost}`,
+      `Posting cadence: ~${stats.postsPerWeek} posts/week over ${stats.daysSinceFirstPost} days`
+    ].join("\n");
+
+    const result = await generate("writer", { topic: prompt, format: "growth tips", tone: "direct and practical" });
+    const tips = result.reply
+      .split("\n")
+      .map((line) => line.replace(/^[-*•\d.)\s]+/, "").trim())
+      .filter(Boolean);
+
+    return sendSuccess(res, { tips, creditsSpent: req.creditCost });
+  } catch (err) {
+    console.error("POST /marketing/growth-coach error:", err.message);
+    return sendError(res, "Failed to generate growth tips.", 502);
+  }
 });
 
 module.exports = router;

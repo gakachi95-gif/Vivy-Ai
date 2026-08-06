@@ -34,7 +34,7 @@ router.get("/pricing", async (req, res) => {
  */
 router.put("/pricing", async (req, res) => {
   try {
-    const allowedKeys = ["costs", "freePlanLimits", "creditPacks", "premiumMonthlyNGN", "premiumYearlyNGN"];
+    const allowedKeys = ["costs", "freePlanLimits", "creditPacks", "premiumMonthlyNGN", "premiumYearlyNGN", "referralMilestones"];
     const updates = {};
     for (const key of allowedKeys) {
       if (req.body[key] !== undefined) updates[key] = req.body[key];
