@@ -39,7 +39,8 @@ const DEFAULT_PRICING = {
     generateBlog: 25,
     analyzeMarketing: 10,
     generateCampaign: 50, // per campaign, charged once per generation batch call
-    autopilotCampaign: 100
+    autopilotCampaign: 100,
+    growthCoach: 10
   },
   freePlanLimits: {
     maxCampaigns: 3,
@@ -55,7 +56,11 @@ const DEFAULT_PRICING = {
     { id: "pack_10000", credits: 10000, priceNGN: 35000 }
   ],
   premiumMonthlyNGN: 2500,
-  premiumYearlyNGN: 25000
+  premiumYearlyNGN: 25000,
+  referralMilestones: [
+    { count: 5, rewardType: "credits", amount: 200 },
+    { count: 50, rewardType: "premiumDays", amount: 30 }
+  ]
 };
 
 /** Fetches the live pricing config, falling back to defaults if the doc doesn't exist yet. */
@@ -70,7 +75,8 @@ async function getPricingConfig() {
     freePlanLimits: { ...DEFAULT_PRICING.freePlanLimits, ...stored.freePlanLimits },
     creditPacks: stored.creditPacks || DEFAULT_PRICING.creditPacks,
     premiumMonthlyNGN: stored.premiumMonthlyNGN ?? DEFAULT_PRICING.premiumMonthlyNGN,
-    premiumYearlyNGN: stored.premiumYearlyNGN ?? DEFAULT_PRICING.premiumYearlyNGN
+    premiumYearlyNGN: stored.premiumYearlyNGN ?? DEFAULT_PRICING.premiumYearlyNGN,
+    referralMilestones: stored.referralMilestones || DEFAULT_PRICING.referralMilestones
   };
 }
 
@@ -87,25 +93,58 @@ function todayKey() {
 
 /**
  * Fetches (or lazily creates) a user's profile document.
- * Shape: { plan, dailyMessagesUsed, lastResetDate, credits, campaignCount, connectedAccountCount }
+ * Shape: { plan, dailyMessagesUsed, lastResetDate, credits, referralCode, referredBy, referralCount }
  */
 async function getUserProfile(uid) {
   const ref = db.collection("users").doc(uid);
   const snap = await ref.get();
 
   if (!snap.exists) {
+    const referralCode = await generateUniqueReferralCode();
     const defaults = {
       plan: "free",
       dailyMessagesUsed: 0,
       lastResetDate: todayKey(),
       credits: STARTER_CREDITS,
+      referralCode,
+      referredBy: null,
+      referralCount: 0,
+      referralRewardActivated: false,
+      referralMilestonesGranted: [],
       createdAt: FieldValue.serverTimestamp()
     };
     await ref.set(defaults, { merge: true });
+    await db.collection("referralCodes").doc(referralCode).set({ uid });
     return { uid, ...defaults };
   }
 
-  return { uid, ...snap.data() };
+  // Backfill: the OLDER client-side signup path (utils.js VivyUser.getProfile,
+  // called directly from the browser right after account creation) creates a
+  // profile doc too, using an older/incompatible schema — no credits field,
+  // no referralCode, dailyUsed/dailyDate instead of dailyMessagesUsed/
+  // lastResetDate. If that ran first, this doc exists but is missing
+  // everything the credit/referral system needs. Patch it in, once, here —
+  // the one place every backend route already goes through to read a profile.
+  const data = snap.data();
+  const missing = {};
+  if (data.credits === undefined) missing.credits = STARTER_CREDITS;
+  if (data.dailyMessagesUsed === undefined) missing.dailyMessagesUsed = data.dailyUsed ?? 0;
+  if (data.lastResetDate === undefined) missing.lastResetDate = data.dailyDate ?? todayKey();
+  if (data.referralCode === undefined) {
+    missing.referralCode = await generateUniqueReferralCode();
+    await db.collection("referralCodes").doc(missing.referralCode).set({ uid });
+  }
+  if (data.referredBy === undefined) missing.referredBy = null;
+  if (data.referralCount === undefined) missing.referralCount = 0;
+  if (data.referralRewardActivated === undefined) missing.referralRewardActivated = false;
+  if (data.referralMilestonesGranted === undefined) missing.referralMilestonesGranted = [];
+
+  if (Object.keys(missing).length > 0) {
+    await ref.set(missing, { merge: true });
+    Object.assign(data, missing);
+  }
+
+  return { uid, ...data };
 }
 
 /**
@@ -143,23 +182,48 @@ async function incrementUsage(uid) {
   });
 }
 
-/** Upgrades a user to Premium — called after a verified Flutterwave payment. */
-async function upgradeToPremium(uid, transactionRef) {
-  await db.collection("users").doc(uid).set(
+/**
+ * Upgrades a user to Premium — called after a verified Flutterwave payment.
+ * durationDays stacks onto any remaining time (a renewal before expiry
+ * extends from the current expiry, not from "now"), so premium is a real
+ * subscription, never permanent — matches "NO lifetime premium".
+ */
+async function upgradeToPremium(uid, transactionRef, durationDays = 30) {
+  const ref = db.collection("users").doc(uid);
+  const snap = await ref.get();
+  const existingUntil = snap.exists && snap.data().premiumUntil ? snap.data().premiumUntil.toMillis() : 0;
+  const base = Math.max(existingUntil, Date.now());
+  const premiumUntil = new Date(base + durationDays * 24 * 60 * 60 * 1000);
+
+  await ref.set(
     {
       plan: "premium",
       premiumSince: FieldValue.serverTimestamp(),
+      premiumUntil: admin.firestore.Timestamp.fromDate(premiumUntil),
       lastPaymentRef: transactionRef
     },
     { merge: true }
   );
 }
 
+/**
+ * The one canonical "is this user actually premium right now" check.
+ * Every other function in this file (and every route) should use this
+ * instead of reading profile.plan directly, so an expired subscription
+ * correctly stops being treated as premium everywhere at once.
+ */
+function isPremiumActive(profile) {
+  if (profile.plan !== "premium") return false;
+  if (!profile.premiumUntil) return false; // no expiry ever set — treat as not active, don't grandfather silently
+  const untilMs = profile.premiumUntil.toMillis ? profile.premiumUntil.toMillis() : new Date(profile.premiumUntil).getTime();
+  return untilMs > Date.now();
+}
+
 /* -----------------------------  CREDITS  ---------------------------------- */
 
-/** True if the user can afford `cost` — premium users always can (unlimited). */
+/** True if the user can afford `cost` — active premium users always can (unlimited). */
 function canAfford(profile, cost) {
-  return profile.plan === "premium" || (profile.credits || 0) >= cost;
+  return isPremiumActive(profile) || (profile.credits || 0) >= cost;
 }
 
 /**
@@ -217,6 +281,93 @@ async function getConnectedAccountCount(uid) {
   return snap.data().count;
 }
 
+/* -----------------------------  REFERRALS  ---------------------------------- */
+
+/** Generates a "VIVY-XXXXX" code, retrying on the rare collision. */
+async function generateUniqueReferralCode() {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no 0/O/1/I — avoids visual ambiguity
+  for (let attempt = 0; attempt < 5; attempt++) {
+    let code = "VIVY-";
+    for (let i = 0; i < 5; i++) code += chars[Math.floor(Math.random() * chars.length)];
+    const existing = await db.collection("referralCodes").doc(code).get();
+    if (!existing.exists) return code;
+  }
+  throw new Error("Could not generate a unique referral code — please try again.");
+}
+
+/**
+ * Links a newly-registered user to whoever referred them. Only takes
+ * effect once, only before any reward has been processed, and rejects
+ * self-referral. Does NOT grant any reward yet — that only happens once
+ * the referred user verifies their email and is confirmed active, via
+ * processReferralActivation below.
+ */
+async function applyReferralCode(newUid, code) {
+  const profile = await getUserProfile(newUid);
+  if (profile.referredBy) return; // already linked — no-op, not an error
+
+  const codeSnap = await db.collection("referralCodes").doc(code.toUpperCase().trim()).get();
+  if (!codeSnap.exists) throw new Error("Invalid referral code.");
+  const referrerUid = codeSnap.data().uid;
+  if (referrerUid === newUid) throw new Error("You can't refer yourself.");
+
+  await db.collection("users").doc(newUid).set({ referredBy: referrerUid }, { merge: true });
+}
+
+/**
+ * Fraud-prevention checkpoint: called from an authenticated route the
+ * referred user actually visits (e.g. loading their referral/settings
+ * page), using the Firebase ID token's own email_verified claim — which
+ * can't be spoofed by the client. Awards the referrer exactly once per
+ * referred user, then checks milestone thresholds and grants each
+ * milestone reward exactly once (tracked in referralMilestonesGranted so
+ * re-running this never double-grants).
+ */
+async function processReferralActivation(uid, emailVerified) {
+  if (!emailVerified) return;
+
+  const profile = await getUserProfile(uid);
+  if (!profile.referredBy || profile.referralRewardActivated) return;
+
+  const referrerRef = db.collection("users").doc(profile.referredBy);
+
+  await db.runTransaction(async (tx) => {
+    const referredRef = db.collection("users").doc(uid);
+    const referredSnap = await tx.get(referredRef);
+    if (referredSnap.data().referralRewardActivated) return; // race guard
+
+    const referrerSnap = await tx.get(referrerRef);
+    if (!referrerSnap.exists) return; // referrer account no longer exists
+
+    const newCount = (referrerSnap.data().referralCount || 0) + 1;
+    tx.update(referrerRef, { referralCount: newCount });
+    tx.update(referredRef, { referralRewardActivated: true });
+  });
+
+  await grantReferralMilestones(profile.referredBy);
+}
+
+/** Checks the referrer's count against configured milestones and grants any newly-reached ones. */
+async function grantReferralMilestones(referrerUid) {
+  const [profile, pricing] = await Promise.all([getUserProfile(referrerUid), getPricingConfig()]);
+  const granted = profile.referralMilestonesGranted || [];
+
+  for (const milestone of pricing.referralMilestones) {
+    if (profile.referralCount < milestone.count) continue;
+    if (granted.includes(milestone.count)) continue;
+
+    if (milestone.rewardType === "credits") {
+      await addCredits(referrerUid, milestone.amount, `referral_milestone:${milestone.count}`);
+    } else if (milestone.rewardType === "premiumDays") {
+      await upgradeToPremium(referrerUid, `referral_milestone:${milestone.count}`, milestone.amount);
+    }
+
+    await db.collection("users").doc(referrerUid).update({
+      referralMilestonesGranted: FieldValue.arrayUnion(milestone.count)
+    });
+  }
+}
+
 /* -----------------------------  SOCIAL ACCOUNT TOKENS  ---------------------------
    Stored under users/{uid}/socialTokens/{platform} — deliberately NOT covered
    by any client-side Firestore security rule, so it's only ever readable via
@@ -258,6 +409,7 @@ module.exports = {
   hasRemainingMessages,
   incrementUsage,
   upgradeToPremium,
+  isPremiumActive,
   saveSocialToken,
   getSocialToken,
   removeSocialToken,
@@ -269,6 +421,9 @@ module.exports = {
   addCredits,
   getCampaignCount,
   getConnectedAccountCount,
+  generateUniqueReferralCode,
+  applyReferralCode,
+  processReferralActivation,
   FREE_DAILY_MESSAGES,
   PREMIUM_DAILY_MESSAGES,
   STARTER_CREDITS
