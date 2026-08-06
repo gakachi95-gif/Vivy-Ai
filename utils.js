@@ -316,4 +316,3 @@ function highlightActiveNav() {
   });
 }
 document.addEventListener("DOMContentLoaded", highlightActiveNav);
-

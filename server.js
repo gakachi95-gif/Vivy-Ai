@@ -45,6 +45,14 @@
 
    WordPress: no env vars needed — connects via user-supplied Application
    Password instead of OAuth (see routes/wordpress.js).
+
+   Credit system / Marketing Agent billing:
+     STARTER_CREDITS           free credits a new user starts with (default 200)
+     ADMIN_UIDS                comma-separated Firebase UIDs allowed to hit
+                                /admin/* routes (edit pricing/costs/limits)
+   All credit costs, free-plan limits, and credit-pack prices are further
+   editable live via PUT /admin/pricing — see services/firestore.js
+   DEFAULT_PRICING for the fallback values used until that's ever edited.
    ========================================================================== */
 
 require("dotenv").config();
@@ -91,6 +99,8 @@ app.use("/image-analysis", require("./routes/imageAnalysis"));
 app.use("/auth", require("./routes/socialAuth"));
 app.use("/publish", require("./routes/publish"));
 app.use("/wordpress", require("./routes/wordpress"));
+app.use("/marketing", require("./routes/marketing"));
+app.use("/admin", require("./routes/admin"));
 
 // ---- Payment routes (Flutterwave — unauthenticated by design, Flutterwave
 //      calls the webhook server-to-server; verify-payment is called by the
