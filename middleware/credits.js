@@ -7,7 +7,7 @@
    ========================================================================== */
 
 const { sendError } = require("../utils/responses");
-const { getUserProfile, getPricingConfig, canAfford, deductCredits } = require("../services/firestore");
+const { getUserProfile, getPricingConfig, canAfford, deductCredits, isPremiumActive } = require("../services/firestore");
 
 function requireCredits(featureKey) {
   return async (req, res, next) => {
@@ -46,7 +46,7 @@ function requirePlanLimit(limitKey, currentCountFn) {
   return async (req, res, next) => {
     try {
       const [profile, pricing] = await Promise.all([getUserProfile(req.uid), getPricingConfig()]);
-      if (profile.plan === "premium") return next(); // unlimited
+      if (isPremiumActive(profile)) return next(); // unlimited
 
       const limits = pricing.freePlanLimits;
 
