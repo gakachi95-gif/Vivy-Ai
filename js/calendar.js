@@ -69,6 +69,7 @@ const VivyCalendar = {
           <span class="post-status ${statusClass}">${this.STATUS_LABELS[post.status] || post.status}</span>
         </div>
         <p class="post-caption">${sanitizeInput(post.caption).slice(0, 140)}${post.caption.length > 140 ? "…" : ""}</p>
+        ${post.recommendedTime ? `<p class="text-sm text-muted mb-8"><span class="material-icons" style="font-size:14px;vertical-align:-2px;">schedule</span> Best time: ${sanitizeInput(post.recommendedTime)}</p>` : ""}
         <div class="post-hashtags">${(post.hashtags || []).slice(0, 4).map((h) => `<span>${sanitizeInput(h)}</span>`).join(" ")}</div>
         <div class="post-actions">
           <button class="btn-icon" title="Copy" onclick="VivyCalendar.copyToClipboard('${post.campaignId}','${post.id}')"><span class="material-icons">content_paste</span></button>

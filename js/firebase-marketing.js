@@ -94,6 +94,7 @@ const VivyMarketing = {
         hashtags: post.hashtags || [],
         imagePrompt: post.imagePrompt,
         imageUrl: post.imageUrl || "",
+        recommendedTime: post.recommendedTime || "",
         status: post.status || "draft",
         createdAt: firebase.firestore.FieldValue.serverTimestamp(),
         updatedAt: firebase.firestore.FieldValue.serverTimestamp()

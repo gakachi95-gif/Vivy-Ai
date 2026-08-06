@@ -6,6 +6,7 @@
    ========================================================================== */
 
 let mktUser = null;
+let mktAccess = null; // last result from GET /marketing/access
 
 (async function initMarketingAgent() {
   mktUser = await requireAuth();
@@ -16,6 +17,14 @@ let mktUser = null;
   });
 
   try {
+    mktAccess = await fetchMarketingAccess();
+    renderCreditBalance();
+
+    if (!mktAccess.hasAnyAccess) {
+      showPaywall();
+      return; // don't bother loading dashboard data behind the paywall
+    }
+
     await refreshCalendarAndDashboard();
     await renderConnectedAccounts();
   } catch (err) {
@@ -26,6 +35,103 @@ let mktUser = null;
   showView("dashboard");
   handleOAuthRedirectParams();
 })();
+
+/** Renders the credit-pack buttons on the paywall using live prices from the backend. */
+function renderCreditPacks() {
+  const container = document.getElementById("credit-packs");
+  const packs = mktAccess?.creditPacks || [];
+  if (packs.length === 0) {
+    container.innerHTML = `<p class="text-sm text-muted">Credit packs are being set up — try Premium instead for now.</p>`;
+    return;
+  }
+  container.innerHTML = packs
+    .map(
+      (p) => `
+      <button class="btn btn-outline" style="width:100%;margin-bottom:8px;" onclick="purchaseCredits('${p.id}', ${p.credits}, ${p.priceNGN})">
+        ${p.credits.toLocaleString()} credits — ₦${p.priceNGN.toLocaleString()}
+      </button>`
+    )
+    .join("");
+}
+
+/** Buys a credit pack via Flutterwave checkout, then verifies server-side and refreshes the balance. */
+function purchaseCredits(packId, credits, priceNGN) {
+  FlutterwaveCheckout({
+    public_key: FLW_CONFIG.publicKey,
+    tx_ref: "vivy-credits-" + mktUser.uid + "-" + Date.now(),
+    amount: priceNGN,
+    currency: FLW_CONFIG.currency,
+    payment_options: "card,mobilemoney,ussd",
+    customer: { email: mktUser.email, name: mktUser.displayName || "Vivy User" },
+    meta: { uid: mktUser.uid, purchaseType: "credits", packId },
+    customizations: {
+      title: "Vivy AI Credits",
+      description: `${credits} credits for the Marketing Agent`,
+      logo: "../icons/icon-192.png"
+    },
+    callback: async function (response) {
+      if (response.status !== "successful" && response.status !== "completed") return;
+      try {
+        const res = await fetch(FLW_CONFIG.verifyEndpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            transaction_id: response.transaction_id,
+            uid: mktUser.uid,
+            purchaseType: "credits",
+            packId
+          })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!data.success) throw new Error(data.message || "Could not verify payment.");
+
+        showNotification("success", data.message || "Credits added!");
+        await refreshCreditBalance();
+        if (mktAccess.hasAnyAccess) {
+          await refreshCalendarAndDashboard();
+          await renderConnectedAccounts();
+          showView("dashboard");
+        }
+      } catch (err) {
+        showNotification("error", err.message || "Could not verify payment. Contact support if you were charged.");
+      }
+    },
+    onclose: function () {}
+  });
+}
+async function fetchMarketingAccess() {
+  const token = await mktUser.getIdToken();
+  const res = await fetch(`${VIVY_API_BASE}/marketing/access`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.success) throw new Error(data.message || "Could not load account status.");
+  return data;
+}
+
+async function refreshCreditBalance() {
+  mktAccess = await fetchMarketingAccess();
+  renderCreditBalance();
+}
+
+function renderCreditBalance() {
+  const el = document.getElementById("credit-balance");
+  if (!el || !mktAccess) return;
+  el.textContent = mktAccess.plan === "premium" ? "Premium ✨" : `${mktAccess.credits} credits`;
+}
+
+/** Shows the paywall view — used when the user has no premium and no credits. */
+function showPaywall() {
+  showView("paywall");
+
+  const balance = mktAccess?.credits ?? 0;
+  document.getElementById("paywall-message").textContent =
+    balance > 0
+      ? `You have ${balance} credits — not quite enough for this. Buy more, or go unlimited with Premium.`
+      : "The Marketing Agent runs on credits or a Premium plan. Get started with either below.";
+
+  renderCreditPacks();
+}
 
 /** Reads ?connected=facebook or ?connect_error=... left by the backend's OAuth callback redirect. */
 function handleOAuthRedirectParams() {
@@ -172,10 +278,98 @@ function updatePlatformSelectionUI() {
   });
 }
 
+function openAutoPilot() {
+  document.getElementById("autopilot-form").reset();
+  showView("autopilot");
+}
+
+document.getElementById("autopilot-form")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const goal = cleanText(document.getElementById("autopilot-goal").value, 200);
+  if (!goal) return;
+
+  // AutoPilot publishes across whatever the user has actually connected —
+  // falls back to a sensible default set inside runAutoPilot if nothing's connected yet.
+  const accounts = await VivyMarketing.getConnectedAccounts(mktUser.uid);
+  const connectedPlatforms = Object.keys(accounts).filter((p) => accounts[p].connected);
+
+  showView("workflow");
+  renderWorkflowSteps();
+
+  try {
+    const { posts } = await VivyCampaigns.runAutoPilot(
+      mktUser.uid,
+      { goal, connectedPlatforms },
+      (stepIndex) => updateWorkflowStep(stepIndex),
+      (done, total) => updateWorkflowProgress(done, total)
+    );
+    showNotification("success", `AutoPilot built a 30-day campaign with ${posts.length} posts!`);
+    await refreshCalendarAndDashboard();
+    await refreshCreditBalance();
+    showView("calendar");
+  } catch (err) {
+    if (err.code === "INSUFFICIENT_CREDITS" || err.code === "PREMIUM_REQUIRED" || err.code === "PLAN_LIMIT_REACHED") {
+      showNotification("warning", err.message);
+      showPaywall();
+    } else {
+      showNotification("error", err.message || "AutoPilot failed. Please try again.");
+      showView("dashboard");
+    }
+  }
+});
+
 function openCampaignForm() {
+  if (mktAccess && mktAccess.plan !== "premium") {
+    const max = mktAccess.freePlanLimits.maxCampaigns;
+    if (mktAccess.campaignCount >= max) {
+      showNotification("warning", `Free accounts are limited to ${max} campaigns. Upgrade to Premium for unlimited campaigns.`);
+      showPaywall();
+      return;
+    }
+  }
   document.getElementById("campaign-form").reset();
   updatePlatformSelectionUI();
   showView("campaign-form");
+}
+
+/** Upgrades to Premium via Flutterwave — same flow as settings.html's upgrade button. */
+function upgradeToPremiumFromMarketing() {
+  const priceNGN = mktAccess?.premiumMonthlyNGN || FLW_CONFIG.premiumPriceNGN;
+  FlutterwaveCheckout({
+    public_key: FLW_CONFIG.publicKey,
+    tx_ref: "vivy-" + mktUser.uid + "-" + Date.now(),
+    amount: priceNGN,
+    currency: FLW_CONFIG.currency,
+    payment_options: "card,mobilemoney,ussd",
+    customer: { email: mktUser.email, name: mktUser.displayName || "Vivy User" },
+    meta: { uid: mktUser.uid },
+    customizations: {
+      title: "Vivy AI Premium",
+      description: "Unlimited campaigns, credits, and connected accounts",
+      logo: "../icons/icon-192.png"
+    },
+    callback: async function (response) {
+      if (response.status !== "successful" && response.status !== "completed") return;
+      try {
+        const res = await fetch(FLW_CONFIG.verifyEndpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ transaction_id: response.transaction_id, uid: mktUser.uid, expectedAmount: priceNGN })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!data.success) throw new Error(data.message || "Could not verify payment.");
+
+        showNotification("success", "You're on Premium! Enjoy unlimited access.");
+        await refreshCreditBalance();
+        await refreshCalendarAndDashboard();
+        await renderConnectedAccounts();
+        showView("dashboard");
+      } catch (err) {
+        showNotification("error", err.message || "Could not verify payment. Contact support if you were charged.");
+      }
+    },
+    onclose: function () {}
+  });
 }
 
 document.getElementById("campaign-form")?.addEventListener("submit", async (e) => {
@@ -214,10 +408,16 @@ document.getElementById("campaign-form")?.addEventListener("submit", async (e) =
     );
     showNotification("success", `Campaign generated with ${posts.length} posts!`);
     await refreshCalendarAndDashboard();
+    await refreshCreditBalance();
     showView("calendar");
   } catch (err) {
-    showNotification("error", err.message || "Campaign generation failed. Please try again.");
-    showView("dashboard");
+    if (err.code === "INSUFFICIENT_CREDITS" || err.code === "PREMIUM_REQUIRED" || err.code === "PLAN_LIMIT_REACHED") {
+      showNotification("warning", err.message);
+      showPaywall();
+    } else {
+      showNotification("error", err.message || "Campaign generation failed. Please try again.");
+      showView("dashboard");
+    }
   }
 });
 
@@ -373,4 +573,4 @@ async function loadAnalytics() {
   const campaigns = window._mktCampaigns || (await VivyMarketing.getCampaigns(mktUser.uid));
   const posts = window._mktPosts || (await VivyMarketing.getAllPosts(mktUser.uid));
   await VivyAnalytics.render(campaigns, posts);
-     }
+}

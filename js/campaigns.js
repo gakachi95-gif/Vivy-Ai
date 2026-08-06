@@ -24,6 +24,21 @@ const VivyCampaigns = {
   BATCH_SIZE: 5,
 
   /**
+   * General best-practice posting times per platform. Static reference
+   * data, not an AI call — genuinely useful without spending credits on
+   * something that doesn't need to be personalized to work well.
+   */
+  BEST_POSTING_TIMES: {
+    facebook: "1:00 PM - 3:00 PM",
+    instagram: "11:00 AM - 1:00 PM or 7:00 PM - 9:00 PM",
+    linkedin: "Tue-Thu, 9:00 AM - 11:00 AM",
+    x: "9:00 AM or 12:00 PM",
+    threads: "12:00 PM - 2:00 PM",
+    pinterest: "8:00 PM - 11:00 PM",
+    wordpress: "Anytime — publish timing matters far less for blog posts"
+  },
+
+  /**
    * The visual workflow steps shown while a campaign is generating.
    * The first four are strategy steps folded into the batched generation
    * calls below (Phase 1 keeps this lightweight); the rest are real steps.
@@ -134,7 +149,88 @@ const VivyCampaigns = {
    * batch so the UI can show real progress), parses and saves the posts,
    * and marks the campaign active. Returns { campaignId, posts }.
    */
-  async runWorkflow(uid, form, onStep, onProgress) {
+  /**
+   * Calls the credit-gated /marketing/generate-batch route directly (not
+   * the free VivyAI.generate() wrapper — Marketing Agent usage is billed
+   * separately from the free standalone Writer tool). Throws a
+   * recognizable error (err.code === "INSUFFICIENT_CREDITS") when the
+   * user can't afford this batch, so the caller can show a clear paywall
+   * prompt instead of a generic failure message.
+   */
+  async _generateBillable({ topic, format, tone }) {
+    const user = firebase.auth().currentUser;
+    if (!user) throw new Error("You must be signed in.");
+    const token = await user.getIdToken();
+
+    const res = await fetch(`${VIVY_API_BASE}/marketing/generate-batch`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ topic, format, tone })
+    });
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok || !data.success) {
+      const err = new Error(data.message || `Generation failed (${res.status}).`);
+      if (data.code) err.code = data.code;
+      if (data.required !== undefined) err.required = data.required;
+      if (data.balance !== undefined) err.balance = data.balance;
+      throw err;
+    }
+    return data.reply;
+  },
+
+  /** Calls the credit-gated /marketing/analyze route — the first real AutoPilot step. */
+  async _analyzeBillable(topic) {
+    const user = firebase.auth().currentUser;
+    if (!user) throw new Error("You must be signed in.");
+    const token = await user.getIdToken();
+
+    const res = await fetch(`${VIVY_API_BASE}/marketing/analyze`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ topic })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.success) {
+      const err = new Error(data.message || `Analysis failed (${res.status}).`);
+      if (data.code) err.code = data.code;
+      throw err;
+    }
+    return data.reply;
+  },
+
+  /**
+   * AutoPilot: the user answers one question ("What do you want to
+   * promote?") instead of filling out the full campaign form. This runs a
+   * real AI analysis to fill in the business description/audience/goal,
+   * defaults to a 30-day campaign across whichever platforms the user has
+   * actually connected (or a sensible default set if none yet), then
+   * delegates to the exact same runWorkflow() a manual campaign uses —
+   * same batching, same billing, same reliability, nothing duplicated.
+   */
+  async runAutoPilot(uid, { goal, connectedPlatforms }, onStep, onProgress, onAnalysis) {
+    const platforms = connectedPlatforms && connectedPlatforms.length > 0
+      ? connectedPlatforms
+      : ["facebook", "instagram", "linkedin", "x", "pinterest"];
+
+    const analysis = await this._analyzeBillable(goal);
+    if (onAnalysis) onAnalysis(analysis);
+
+    const form = {
+      name: `AutoPilot: ${goal}`.slice(0, 100),
+      businessName: goal.slice(0, 100),
+      businessDescription: analysis.slice(0, 1000),
+      targetAudience: "Inferred from AI analysis — see campaign notes.",
+      goal: `Grow awareness and engagement for: ${goal}`,
+      platforms,
+      days: 30
+    };
+
+    const result = await this.runWorkflow(uid, form, onStep, onProgress, { attachRecommendedTime: true });
+    return result;
+  },
+
+  async runWorkflow(uid, form, onStep, onProgress, options = {}) {
     const tick = async (i) => {
       if (onStep) onStep(i, this.WORKFLOW_STEPS[i]);
       await new Promise((r) => setTimeout(r, 450)); // keep each strategy step visibly readable
@@ -157,10 +253,10 @@ const VivyCampaigns = {
       const batchPairs = dayPlatformPairs.slice(start, start + this.BATCH_SIZE);
       const prompt = this.buildBatchPrompt(form, batchPairs);
 
-      const raw = await VivyAI.generate({
-        task: "writer",
-        prompt,
-        meta: { format: "social media content calendar", tone: "marketing" }
+      const raw = await this._generateBillable({
+        topic: prompt,
+        format: "social media content calendar",
+        tone: "marketing"
       });
 
       const batchPosts = this.parseGeneratedContent(raw, new Date(), batchPairs);
@@ -171,6 +267,12 @@ const VivyCampaigns = {
 
     if (allPosts.length === 0) {
       throw new Error("The AI response couldn't be parsed into posts. Please try generating again.");
+    }
+
+    if (options.attachRecommendedTime) {
+      allPosts.forEach((p) => {
+        p.recommendedTime = this.BEST_POSTING_TIMES[p.platform] || "";
+      });
     }
 
     await tick(5); // hashtags — already included in every batch above
