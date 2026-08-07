@@ -36,16 +36,22 @@ const LIMIT_LABELS = {
     const res = await fetch(`${VIVY_API_BASE}/admin/pricing`, {
       headers: { Authorization: `Bearer ${token}` }
     });
+
     const data = await res.json().catch(() => ({}));
 
     if (res.status === 403) {
       document.getElementById("access-denied").style.display = "block";
       return;
     }
-    if (!res.ok || !data.success) throw new Error(data.message || "Could not load pricing.");
+
+    if (!res.ok || !data.success) {
+      throw new Error(data.message || "Could not load pricing.");
+    }
 
     pricing = data.pricing;
+
     document.getElementById("admin-content").style.display = "block";
+
     renderAll();
   } catch (err) {
     showNotification("error", err.message || "Could not load admin data.");
@@ -62,12 +68,19 @@ function renderAll() {
 
 function renderNumberFields(containerId, obj, labels) {
   const container = document.getElementById(containerId);
+
   container.innerHTML = Object.keys(labels)
     .map(
       (key) => `
       <div class="admin-row">
         <label>${labels[key]}</label>
-        <input class="form-input" type="number" min="0" data-cost-key="${key}" value="${obj[key] ?? 0}">
+        <input
+          class="form-input"
+          type="number"
+          min="0"
+          data-cost-key="${key}"
+          value="${obj[key] ?? 0}"
+        >
       </div>`
     )
     .join("");
@@ -76,14 +89,25 @@ function renderNumberFields(containerId, obj, labels) {
 function renderLimitFields() {
   const container = document.getElementById("limits-card");
   const limits = pricing.freePlanLimits;
+
   container.innerHTML = Object.keys(LIMIT_LABELS)
     .map((key) => {
       const isBool = typeof limits[key] === "boolean";
-      const value = isBool ? (limits[key] ? 1 : 0) : (limits[key] ?? 0);
+      const value = isBool
+        ? (limits[key] ? 1 : 0)
+        : (limits[key] ?? 0);
+
       return `
       <div class="admin-row">
         <label>${LIMIT_LABELS[key]}</label>
-        <input class="form-input" type="number" min="0" data-limit-key="${key}" data-is-bool="${isBool}" value="${value}">
+        <input
+          class="form-input"
+          type="number"
+          min="0"
+          data-limit-key="${key}"
+          data-is-bool="${isBool}"
+          value="${value}"
+        >
       </div>`;
     })
     .join("");
@@ -91,8 +115,29 @@ function renderLimitFields() {
 
 function renderPriceFields() {
   document.getElementById("prices-card").innerHTML = `
-    <div class="admin-row"><label>Premium Monthly</label><input class="form-input" type="number" min="0" id="price-monthly" value="${pricing.premiumMonthlyNGN}"></div>
-    <div class="admin-row"><label>Premium Yearly</label><input class="form-input" type="number" min="0" id="price-yearly" value="${pricing.premiumYearlyNGN}"></div>
+    <div class="admin-row">
+      <label>Premium Monthly (USD)</label>
+      <input
+        class="form-input"
+        type="number"
+        min="0"
+        step="0.01"
+        id="price-monthly"
+        value="${pricing.premiumMonthlyUSD ?? 0}"
+      >
+    </div>
+
+    <div class="admin-row">
+      <label>Premium Yearly (USD)</label>
+      <input
+        class="form-input"
+        type="number"
+        min="0"
+        step="0.01"
+        id="price-yearly"
+        value="${pricing.premiumYearlyUSD ?? 0}"
+      >
+    </div>
   `;
 }
 
@@ -101,89 +146,201 @@ function renderPacks() {
     .map(
       (p, i) => `
       <div class="pack-row" data-pack-index="${i}">
-        <input class="form-input" placeholder="id" value="${p.id}" data-pack-field="id">
-        <input class="form-input" type="number" placeholder="credits" value="${p.credits}" data-pack-field="credits">
-        <input class="form-input" type="number" placeholder="price NGN" value="${p.priceNGN}" data-pack-field="priceNGN">
-        <button class="btn-icon" onclick="removePackRow(${i})"><span class="material-icons">delete</span></button>
+        <input
+          class="form-input"
+          placeholder="id"
+          value="${p.id}"
+          data-pack-field="id"
+        >
+
+        <input
+          class="form-input"
+          type="number"
+          min="0"
+          placeholder="credits"
+          value="${p.credits}"
+          data-pack-field="credits"
+        >
+
+        <input
+          class="form-input"
+          type="number"
+          min="0"
+          step="0.01"
+          placeholder="price USD"
+          value="${p.priceUSD ?? 0}"
+          data-pack-field="priceUSD"
+        >
+
+        <button
+          class="btn-icon"
+          onclick="removePackRow(${i})"
+        >
+          <span class="material-icons">delete</span>
+        </button>
       </div>`
     )
     .join("");
 }
 
 function addPackRow() {
-  pricing.creditPacks.push({ id: `pack_${Date.now()}`, credits: 100, priceNGN: 1000 });
+  pricing.creditPacks.push({
+    id: `pack_${Date.now()}`,
+    credits: 100,
+    priceUSD: 1
+  });
+
   renderPacks();
 }
+
 function removePackRow(i) {
   pricing.creditPacks.splice(i, 1);
   renderPacks();
 }
 
 function renderMilestones() {
-  document.getElementById("milestones-list").innerHTML = pricing.referralMilestones
-    .map(
-      (m, i) => `
+  document.getElementById("milestones-list").innerHTML =
+    pricing.referralMilestones
+      .map(
+        (m, i) => `
       <div class="milestone-row" data-milestone-index="${i}">
-        <input class="form-input" type="number" placeholder="referral count" value="${m.count}" data-milestone-field="count">
-        <input class="form-input" placeholder="credits or premiumDays" value="${m.rewardType}" data-milestone-field="rewardType">
-        <input class="form-input" type="number" placeholder="amount" value="${m.amount}" data-milestone-field="amount">
-        <button class="btn-icon" onclick="removeMilestoneRow(${i})"><span class="material-icons">delete</span></button>
+        <input
+          class="form-input"
+          type="number"
+          placeholder="referral count"
+          value="${m.count}"
+          data-milestone-field="count"
+        >
+
+        <input
+          class="form-input"
+          placeholder="credits or premiumDays"
+          value="${m.rewardType}"
+          data-milestone-field="rewardType"
+        >
+
+        <input
+          class="form-input"
+          type="number"
+          placeholder="amount"
+          value="${m.amount}"
+          data-milestone-field="amount"
+        >
+
+        <button
+          class="btn-icon"
+          onclick="removeMilestoneRow(${i})"
+        >
+          <span class="material-icons">delete</span>
+        </button>
       </div>`
-    )
-    .join("");
+      )
+      .join("");
 }
 
 function addMilestoneRow() {
-  pricing.referralMilestones.push({ count: 10, rewardType: "credits", amount: 100 });
+  pricing.referralMilestones.push({
+    count: 10,
+    rewardType: "credits",
+    amount: 100
+  });
+
   renderMilestones();
 }
+
 function removeMilestoneRow(i) {
   pricing.referralMilestones.splice(i, 1);
   renderMilestones();
 }
 
-/** Reads every input back into the pricing object, then saves via PUT /admin/pricing. */
+/**
+ * Reads every input back into the pricing object,
+ * then saves via PUT /admin/pricing.
+ */
 async function savePricing() {
+  // AI feature costs
   document.querySelectorAll("[data-cost-key]").forEach((el) => {
-    pricing.costs[el.dataset.costKey] = parseInt(el.value, 10) || 0;
+    pricing.costs[el.dataset.costKey] =
+      parseInt(el.value, 10) || 0;
   });
+
+  // Free plan limits
   document.querySelectorAll("[data-limit-key]").forEach((el) => {
     const raw = parseInt(el.value, 10) || 0;
-    pricing.freePlanLimits[el.dataset.limitKey] = el.dataset.isBool === "true" ? raw === 1 : raw;
-  });
-  pricing.premiumMonthlyNGN = parseInt(document.getElementById("price-monthly").value, 10) || 0;
-  pricing.premiumYearlyNGN = parseInt(document.getElementById("price-yearly").value, 10) || 0;
 
+    pricing.freePlanLimits[el.dataset.limitKey] =
+      el.dataset.isBool === "true"
+        ? raw === 1
+        : raw;
+  });
+
+  // Premium pricing in USD
+  pricing.premiumMonthlyUSD =
+    parseFloat(document.getElementById("price-monthly").value) || 0;
+
+  pricing.premiumYearlyUSD =
+    parseFloat(document.getElementById("price-yearly").value) || 0;
+
+  // Credit packs
   document.querySelectorAll("[data-pack-index]").forEach((row) => {
     const i = parseInt(row.dataset.packIndex, 10);
+
     row.querySelectorAll("[data-pack-field]").forEach((el) => {
       const field = el.dataset.packField;
-      pricing.creditPacks[i][field] = field === "id" ? el.value : parseInt(el.value, 10) || 0;
+
+      if (field === "id") {
+        pricing.creditPacks[i][field] = el.value;
+      } else if (field === "priceUSD") {
+        pricing.creditPacks[i][field] =
+          parseFloat(el.value) || 0;
+      } else {
+        pricing.creditPacks[i][field] =
+          parseInt(el.value, 10) || 0;
+      }
     });
   });
 
+  // Referral milestones
   document.querySelectorAll("[data-milestone-index]").forEach((row) => {
     const i = parseInt(row.dataset.milestoneIndex, 10);
+
     row.querySelectorAll("[data-milestone-field]").forEach((el) => {
       const field = el.dataset.milestoneField;
-      pricing.referralMilestones[i][field] = field === "rewardType" ? el.value : parseInt(el.value, 10) || 0;
+
+      pricing.referralMilestones[i][field] =
+        field === "rewardType"
+          ? el.value
+          : parseInt(el.value, 10) || 0;
     });
   });
 
   try {
     const token = await adminUser.getIdToken();
+
     const res = await fetch(`${VIVY_API_BASE}/admin/pricing`, {
       method: "PUT",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`
+      },
       body: JSON.stringify(pricing)
     });
+
     const data = await res.json().catch(() => ({}));
-    if (!res.ok || !data.success) throw new Error(data.message || "Save failed.");
+
+    if (!res.ok || !data.success) {
+      throw new Error(data.message || "Save failed.");
+    }
 
     pricing = data.pricing;
+
     showNotification("success", "Pricing config saved.");
+
     renderAll();
   } catch (err) {
-    showNotification("error", err.message || "Could not save changes.");
+    showNotification(
+      "error",
+      err.message || "Could not save changes."
+    );
   }
 }
