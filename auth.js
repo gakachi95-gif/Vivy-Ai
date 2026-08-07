@@ -31,18 +31,48 @@ async function signInWithEmail(email, password, remember = true) {
 }
 
 /** Creates a new account, sets the display name, and seeds the Firestore profile. */
-async function signUpWithEmail(username, email, password) {
+async function signUpWithEmail(username, email, password, referralCode = null) {
   const cred = await auth.createUserWithEmailAndPassword(email, password);
   await cred.user.updateProfile({ displayName: username });
   await VivyUser.getProfile(cred.user.uid); // lazily creates the default profile doc
+
+  if (referralCode) {
+    try {
+      const token = await cred.user.getIdToken();
+      await fetch(`${VIVY_API_BASE}/referrals/apply`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ code: referralCode })
+      });
+      // Non-fatal if this fails — account creation already succeeded, and
+      // a failed referral link shouldn't block signup. Silently skip.
+    } catch (e) {
+      console.warn("Referral code could not be applied:", e.message);
+    }
+  }
+
   return cred;
 }
 
 /** Google sign-in popup (works for both login and register flows). */
-async function signInWithGoogle(remember = true) {
+async function signInWithGoogle(remember = true, referralCode = null) {
   await trySetPersistence(remember);
   const cred = await auth.signInWithPopup(googleProvider);
   await VivyUser.getProfile(cred.user.uid); // no-op if the profile already exists
+
+  if (referralCode) {
+    try {
+      const token = await cred.user.getIdToken();
+      await fetch(`${VIVY_API_BASE}/referrals/apply`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ code: referralCode })
+      });
+    } catch (e) {
+      console.warn("Referral code could not be applied:", e.message);
+    }
+  }
+
   return cred;
 }
 
