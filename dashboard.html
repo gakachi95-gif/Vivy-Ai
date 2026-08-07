@@ -106,13 +106,36 @@
         </span>
         <div class="text-sm mt-8">Daily AI messages: <strong>${remaining === Infinity ? "∞" : remaining}</strong> / ${limit}</div>
         <div class="usage-bar-track"><div class="usage-bar-fill" style="width:${usedPct}%"></div></div>
+        <div class="text-sm mt-8" id="coin-balance-line" style="display:none;"></div>
       </div>
     `;
 
-    if (profile.plan !== "premium") {
-      document.getElementById("ad-banner").style.display = "block";
+    // Ads/coin display uses the backend's plan status, which correctly
+    // accounts for premium expiry (the raw client Firestore flag doesn't).
+    // Wrapped so a failed fetch never blocks the dashboard — everything
+    // above this line already rendered from Firestore directly.
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch(`${VIVY_API_BASE}/marketing/access`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        const coinLine = document.getElementById("coin-balance-line");
+        if (data.plan === "premium") {
+          coinLine.textContent = "🪙 Unlimited (Premium)";
+        } else {
+          coinLine.textContent = `🪙 ${(data.credits || 0).toLocaleString()} Coins`;
+          if (data.freePlanLimits?.adsEnabled !== false) {
+            document.getElementById("ad-banner").style.display = "block";
+          }
+        }
+        coinLine.style.display = "block";
+      }
+    } catch (e) {
+      // Ads/coin display is a nice-to-have here — silently skip on failure.
     }
   })();
 </script>
 </body>
-</html>
+  </html>
