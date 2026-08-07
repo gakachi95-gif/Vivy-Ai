@@ -100,6 +100,7 @@ app.use("/auth", require("./routes/socialAuth"));
 app.use("/publish", require("./routes/publish"));
 app.use("/wordpress", require("./routes/wordpress"));
 app.use("/marketing", require("./routes/marketing"));
+app.use("/referrals", require("./routes/referrals"));
 app.use("/admin", require("./routes/admin"));
 
 // ---- Payment routes (Flutterwave — unauthenticated by design, Flutterwave
