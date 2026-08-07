@@ -2,36 +2,8 @@
    services/firestore.js
    Single place that owns the Firebase Admin SDK instance and every
    Firestore read/write the backend needs — user profiles, daily AI usage
-   tracking, plan upgrades, and the pricing configuration (used by both the
-   AI routes and the Flutterwave payment routes).
-
-   ------------------------------------------------------------------------
-   CURRENCY ARCHITECTURE (single source of truth)
-   ------------------------------------------------------------------------
-   Vivy AI prices premium plans and credit packs in BOTH USD and NGN at the
-   same time — it never converts one to the other with a hard-coded
-   exchange rate. Every price lives in this shape:
-
-     premiumMonthly: { USD: 9.99, NGN: 15000 }
-     premiumYearly:  { USD: 79,   NGN: 120000 }
-     creditPacks: [
-       { id: "pack_500", credits: 500, price: { USD: 4.99, NGN: 7500 } },
-       ...
-     ]
-
-   `currency` on the config is only the *default/global display* currency
-   (what the frontend shows before the user picks one) — it never limits
-   which currencies are accepted at checkout. Every payment explicitly
-   carries its own currency end-to-end: the checkout call, the Flutterwave
-   transaction, and the server-side verification all key off the SAME
-   currency, and a mismatch is rejected (see routes/payment.js).
-
-   getPricingConfig() is also the single place that normalizes legacy
-   Firestore documents (old flat premiumMonthlyNGN / premiumMonthlyUSD /
-   priceNGN / priceUSD fields) into this shape, so older data never crashes
-   the app — see normalizePricingDoc() below. It also returns the old flat
-   field names alongside the new nested ones, so any frontend code that
-   hasn't been migrated yet keeps working during the transition.
+   tracking, and plan upgrades (used by both the AI routes and the
+   Flutterwave payment routes).
    ========================================================================== */
 
 const admin = require("firebase-admin");
@@ -54,12 +26,9 @@ const FREE_DAILY_MESSAGES = parseInt(process.env.FREE_DAILY_MESSAGES || "20", 10
 const PREMIUM_DAILY_MESSAGES = parseInt(process.env.PREMIUM_DAILY_MESSAGES || "1000", 10);
 const STARTER_CREDITS = parseInt(process.env.STARTER_CREDITS || "200", 10);
 
-/** The only currencies Vivy AI accepts money in. Add here first if that ever changes. */
-const SUPPORTED_CURRENCIES = ["USD", "NGN"];
-
 /**
- * Default credit costs, free-plan limits, and pricing. Stored in Firestore
- * at config/pricing so the Admin Dashboard can edit them live without a
+ * Default credit costs and free-plan limits. Stored in Firestore at
+ * config/pricing so the Admin Dashboard can edit them live without a
  * redeploy — these constants are only the fallback used the very first
  * time the app runs, before that document exists.
  */
@@ -78,176 +47,44 @@ const DEFAULT_PRICING = {
     maxConnectedAccounts: 1,
     autopilotEnabled: false,
     autoPublishEnabled: false,
-    analyticsEnabled: false
+    analyticsEnabled: false,
+    adsEnabled: true
   },
-  // Global/default display currency. Does NOT restrict checkout — both
-  // currencies are always accepted; this only picks what shows first.
-  currency: "USD",
   creditPacks: [
-    { id: "pack_500", credits: 500, price: { USD: 4.99, NGN: 7500 } },
-    { id: "pack_1000", credits: 1000, price: { USD: 8.99, NGN: 13500 } },
-    { id: "pack_5000", credits: 5000, price: { USD: 34.99, NGN: 52500 } },
-    { id: "pack_10000", credits: 10000, price: { USD: 59.99, NGN: 90000 } }
+    { id: "pack_500", credits: 500, priceUSD: 4.99, bonusCredits: 0, description: "Perfect for getting started", badge: "", active: true },
+    { id: "pack_1000", credits: 1000, priceUSD: 8.99, bonusCredits: 100, description: "Great for regular use", badge: "Popular", active: true },
+    { id: "pack_5000", credits: 5000, priceUSD: 34.99, bonusCredits: 750, description: "Our best value per coin", badge: "Best Value", active: true },
+    { id: "pack_10000", credits: 10000, priceUSD: 59.99, bonusCredits: 2000, description: "For power users and agencies", badge: "Power User", active: true }
   ],
-  premiumMonthly: { USD: 9.99, NGN: 15000 },
-  premiumYearly: { USD: 79, NGN: 120000 },
+  premiumMonthlyUSD: 9.99,
+  premiumYearlyUSD: 79,
   referralMilestones: [
     { count: 5, rewardType: "credits", amount: 200 },
     { count: 50, rewardType: "premiumDays", amount: 30 }
   ]
 };
 
-/**
- * Turns a legacy flat field pair (e.g. premiumMonthlyUSD / premiumMonthlyNGN)
- * into the new { USD, NGN } shape, falling back to defaults for whichever
- * currency is missing. Never throws on missing/partial data.
- */
-function normalizeMoneyPair(stored, flatUsdKey, flatNgnKey, nestedKey, fallback) {
-  const nested = stored && stored[nestedKey];
-  const flatUsd = stored && stored[flatUsdKey];
-  const flatNgn = stored && stored[flatNgnKey];
-
-  return {
-    USD:
-      (nested && nested.USD !== undefined ? nested.USD : undefined) ??
-      flatUsd ??
-      fallback.USD,
-    NGN:
-      (nested && nested.NGN !== undefined ? nested.NGN : undefined) ??
-      flatNgn ??
-      fallback.NGN
-  };
-}
-
-/**
- * Normalizes a single credit pack, whether it's already in the new
- * { price: { USD, NGN } } shape or the legacy { priceUSD } / { priceNGN }
- * shape (or, worse, only one of those from a half-migrated edit).
- */
-function normalizeCreditPack(pack, fallback) {
-  const price = {
-    USD:
-      (pack.price && pack.price.USD !== undefined ? pack.price.USD : undefined) ??
-      pack.priceUSD ??
-      (fallback ? fallback.price.USD : 0),
-    NGN:
-      (pack.price && pack.price.NGN !== undefined ? pack.price.NGN : undefined) ??
-      pack.priceNGN ??
-      (fallback ? fallback.price.NGN : 0)
-  };
-
-  return {
-    id: pack.id,
-    credits: pack.credits,
-    price,
-    // Legacy flat aliases kept temporarily so any not-yet-updated frontend
-    // code reading p.priceUSD / p.priceNGN directly keeps working.
-    priceUSD: price.USD,
-    priceNGN: price.NGN
-  };
-}
-
-/**
- * Normalizes a raw Firestore pricing document (which may be brand new,
- * fully migrated, fully legacy, or a half-edited mix of both) into the
- * single canonical shape the rest of the app relies on. This is the ONE
- * place backward-compatibility for old NGN-only pricing docs lives —
- * idempotent and safe to run on every read.
- */
-function normalizePricingDoc(stored) {
-  stored = stored || {};
-
-  const premiumMonthly = normalizeMoneyPair(
-    stored,
-    "premiumMonthlyUSD",
-    "premiumMonthlyNGN",
-    "premiumMonthly",
-    DEFAULT_PRICING.premiumMonthly
-  );
-  const premiumYearly = normalizeMoneyPair(
-    stored,
-    "premiumYearlyUSD",
-    "premiumYearlyNGN",
-    "premiumYearly",
-    DEFAULT_PRICING.premiumYearly
-  );
-
-  const rawPacks =
-    Array.isArray(stored.creditPacks) && stored.creditPacks.length > 0
-      ? stored.creditPacks
-      : DEFAULT_PRICING.creditPacks;
-
-  const creditPacks = rawPacks.map((pack) => {
-    const fallback = DEFAULT_PRICING.creditPacks.find((p) => p.id === pack.id);
-    return normalizeCreditPack(pack, fallback);
-  });
-
-  const currency = SUPPORTED_CURRENCIES.includes(stored.currency)
-    ? stored.currency
-    : DEFAULT_PRICING.currency;
-
-  return {
-    costs: { ...DEFAULT_PRICING.costs, ...stored.costs },
-    freePlanLimits: { ...DEFAULT_PRICING.freePlanLimits, ...stored.freePlanLimits },
-    currency,
-    creditPacks,
-    premiumMonthly,
-    premiumYearly,
-    referralMilestones: stored.referralMilestones || DEFAULT_PRICING.referralMilestones,
-
-    // ---- Legacy flat aliases (temporary, for frontend still mid-migration) ----
-    premiumMonthlyUSD: premiumMonthly.USD,
-    premiumMonthlyNGN: premiumMonthly.NGN,
-    premiumYearlyUSD: premiumYearly.USD,
-    premiumYearlyNGN: premiumYearly.NGN
-  };
-}
-
 /** Fetches the live pricing config, falling back to defaults if the doc doesn't exist yet. */
 async function getPricingConfig() {
   const snap = await db.collection("config").doc("pricing").get();
-  if (!snap.exists) return normalizePricingDoc(null);
-  return normalizePricingDoc(snap.data());
+  if (!snap.exists) return DEFAULT_PRICING;
+  // Merge over defaults so a partially-edited doc (e.g. admin only changed
+  // costs) doesn't lose freePlanLimits/creditPacks that were never touched.
+  const stored = snap.data();
+  return {
+    costs: { ...DEFAULT_PRICING.costs, ...stored.costs },
+    freePlanLimits: { ...DEFAULT_PRICING.freePlanLimits, ...stored.freePlanLimits },
+    creditPacks: stored.creditPacks || DEFAULT_PRICING.creditPacks,
+    premiumMonthlyUSD: stored.premiumMonthlyUSD ?? DEFAULT_PRICING.premiumMonthlyUSD,
+    premiumYearlyUSD: stored.premiumYearlyUSD ?? DEFAULT_PRICING.premiumYearlyUSD,
+    referralMilestones: stored.referralMilestones || DEFAULT_PRICING.referralMilestones
+  };
 }
 
-/**
- * Admin-only: merges the given updates into the live config. Accepts
- * EITHER the new nested shape (premiumMonthly: {USD,NGN}, price:{USD,NGN})
- * OR legacy flat fields (premiumMonthlyUSD/NGN, priceUSD/NGN) — whatever
- * comes in is normalized before being written, so the stored document
- * self-heals toward the clean shape on every admin save instead of ever
- * needing a one-off migration script.
- */
+/** Admin-only: overwrites (merges into) the live pricing config. */
 async function updatePricingConfig(updates) {
-  const current = await getPricingConfig();
-  const merged = normalizePricingDoc({ ...current, ...updates });
-
-  // Persist only the canonical nested shape — the legacy flat aliases are
-  // derived on read, not stored, so Firestore itself is never a source of
-  // stale duplicate data.
-  const { premiumMonthlyUSD, premiumMonthlyNGN, premiumYearlyUSD, premiumYearlyNGN, ...toStore } = merged;
-
-  await db.collection("config").doc("pricing").set(toStore, { merge: false });
+  await db.collection("config").doc("pricing").set(updates, { merge: true });
   return getPricingConfig();
-}
-
-/** Returns { amount, currency } for a premium plan ("monthly"|"yearly") in the given currency. Throws on an unsupported currency. */
-function getPremiumPrice(pricing, planType, currency) {
-  if (!SUPPORTED_CURRENCIES.includes(currency)) {
-    throw new Error(`Unsupported currency: ${currency}`);
-  }
-  const pair = planType === "yearly" ? pricing.premiumYearly : pricing.premiumMonthly;
-  return pair[currency];
-}
-
-/** Returns the price of a credit pack in the given currency, or null if the pack/currency isn't found. */
-function getPackPrice(pricing, packId, currency) {
-  if (!SUPPORTED_CURRENCIES.includes(currency)) {
-    throw new Error(`Unsupported currency: ${currency}`);
-  }
-  const pack = pricing.creditPacks.find((p) => p.id === packId);
-  if (!pack) return null;
-  return pack.price[currency];
 }
 
 /** Returns today's date as YYYY-MM-DD (UTC), used as the daily-reset key. */
@@ -580,9 +417,6 @@ module.exports = {
   setConnectedAccountStatus,
   getPricingConfig,
   updatePricingConfig,
-  getPremiumPrice,
-  getPackPrice,
-  SUPPORTED_CURRENCIES,
   canAfford,
   deductCredits,
   addCredits,
