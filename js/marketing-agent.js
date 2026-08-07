@@ -7,7 +7,6 @@
 
 let mktUser = null;
 let mktAccess = null; // last result from GET /marketing/access
-let mktCurrency = null; // "USD" | "NGN" — currently selected checkout currency
 
 (async function initMarketingAgent() {
   mktUser = await requireAuth();
@@ -19,11 +18,9 @@ let mktCurrency = null; // "USD" | "NGN" — currently selected checkout currenc
 
   try {
     mktAccess = await fetchMarketingAccess();
-    mktCurrency = (mktAccess && mktAccess.currency) || FLW_CONFIG.defaultCurrency || "USD";
     renderCreditBalance();
 
     if (!mktAccess.hasAnyAccess) {
-      renderCurrencyToggle();
       showPaywall();
       return; // don't bother loading dashboard data behind the paywall
     }
@@ -39,81 +36,51 @@ let mktCurrency = null; // "USD" | "NGN" — currently selected checkout currenc
   handleOAuthRedirectParams();
 })();
 
-/** Renders the USD/NGN toggle on the paywall and re-renders prices when it changes. */
-function renderCurrencyToggle() {
-  const container = document.getElementById("currency-toggle");
-  if (!container) return;
-
-  const currencies = (FLW_CONFIG.supportedCurrencies && FLW_CONFIG.supportedCurrencies.length)
-    ? FLW_CONFIG.supportedCurrencies
-    : ["USD", "NGN"];
-
-  container.innerHTML = currencies
-    .map(
-      (c) => `
-      <button
-        type="button"
-        class="btn ${c === mktCurrency ? "btn-primary" : "btn-outline"}"
-        style="padding:4px 14px;margin:0 4px;font-size:13px;"
-        onclick="setMktCurrency('${c}')"
-      >${c}</button>`
-    )
-    .join("");
-
-  renderPremiumButtonLabel();
-  renderCreditPacks();
-}
-
-function setMktCurrency(currency) {
-  mktCurrency = currency;
-  renderCurrencyToggle();
-}
-
-function currencySymbol(currency) {
-  return currency === "NGN" ? "₦" : "$";
-}
-
-function renderPremiumButtonLabel() {
-  const btn = document.getElementById("premium-upgrade-btn");
-  if (!btn || !mktAccess) return;
-  const price = (mktAccess.premiumMonthly && mktAccess.premiumMonthly[mktCurrency]) || 0;
-  btn.textContent = `Upgrade to Premium — ${currencySymbol(mktCurrency)}${price.toLocaleString()}/mo`;
-}
-
-/** Renders the credit-pack buttons on the paywall using live prices from the backend, in the selected currency. */
+/** Renders the credit-pack buttons on the paywall using live prices from the backend. */
+/** Renders the Coin Store — fully driven by admin-configured pack data, nothing hardcoded. */
 function renderCreditPacks() {
   const container = document.getElementById("credit-packs");
-  const packs = mktAccess?.creditPacks || [];
+  const packs = (mktAccess?.creditPacks || []).filter((p) => p.active !== false);
+
   if (packs.length === 0) {
-    container.innerHTML = `<p class="text-sm text-muted">Credit packs are being set up — try Premium instead for now.</p>`;
+    container.innerHTML = `<p class="text-sm text-muted">Coin packs are being set up — try Premium instead for now.</p>`;
     return;
   }
-  container.innerHTML = packs
+
+  container.innerHTML = `<div class="coin-pack-grid">${packs
     .map((p) => {
-      const price = (p.price && p.price[mktCurrency]) || 0;
-      const disabled = !price || price <= 0;
+      const isFeatured = !!p.badge;
+      const bonus = p.bonusCredits > 0 ? `<span class="coin-pack-bonus">+${p.bonusCredits.toLocaleString()} BONUS</span>` : "";
       return `
-      <button class="btn btn-outline" style="width:100%;margin-bottom:8px;" ${disabled ? "disabled" : ""}
-        onclick="purchaseCredits('${p.id}', ${p.credits}, ${price}, '${mktCurrency}')">
-        ${p.credits.toLocaleString()} credits — ${disabled ? "unavailable in " + mktCurrency : currencySymbol(mktCurrency) + price.toLocaleString()}
-      </button>`;
+      <div class="coin-pack-card ${isFeatured ? "featured" : ""}">
+        ${p.badge ? `<span class="coin-pack-badge">${sanitizeInput(p.badge)}</span>` : ""}
+        <span class="coin-pack-icon">🪙</span>
+        <div class="coin-pack-info">
+          <div class="coin-pack-amount">${p.credits.toLocaleString()} Coins${bonus}</div>
+          ${p.description ? `<div class="coin-pack-desc">${sanitizeInput(p.description)}</div>` : ""}
+        </div>
+        <div class="coin-pack-buy">
+          <div class="coin-pack-price">$${p.priceUSD.toFixed(2)}</div>
+          <button class="coin-pack-buy-btn" onclick="purchaseCredits('${p.id}', ${p.credits + (p.bonusCredits || 0)}, ${p.priceUSD})">BUY NOW</button>
+        </div>
+      </div>`;
     })
-    .join("");
+    .join("")}</div>`;
 }
 
 /** Buys a credit pack via Flutterwave checkout, then verifies server-side and refreshes the balance. */
-function purchaseCredits(packId, credits, amount, currency) {
+function purchaseCredits(packId, credits, priceUSD) {
   FlutterwaveCheckout({
     public_key: FLW_CONFIG.publicKey,
     tx_ref: "vivy-credits-" + mktUser.uid + "-" + Date.now(),
-    amount,
-    currency,
+    amount: priceUSD,
+    currency: FLW_CONFIG.currency,
     payment_options: "card,mobilemoney,ussd",
     customer: { email: mktUser.email, name: mktUser.displayName || "Vivy User" },
     meta: { uid: mktUser.uid, purchaseType: "credits", packId },
     customizations: {
-      title: "Vivy AI Credits",
-      description: `${credits} credits for the Marketing Agent`,
+      title: "Vivy AI Coins",
+      description: `${credits.toLocaleString()} coins for the Marketing Agent`,
       logo: "../icons/icon-192.png"
     },
     callback: async function (response) {
@@ -164,20 +131,46 @@ async function refreshCreditBalance() {
 function renderCreditBalance() {
   const el = document.getElementById("credit-balance");
   if (!el || !mktAccess) return;
-  el.textContent = mktAccess.plan === "premium" ? "Premium ✨" : `${mktAccess.credits} credits`;
+  el.textContent = mktAccess.plan === "premium" ? "Premium ✨" : `🪙 ${mktAccess.credits.toLocaleString()} Coins`;
+
+  const adBanner = document.getElementById("mkt-ad-banner");
+  if (adBanner) {
+    adBanner.style.display = (mktAccess.plan !== "premium" && mktAccess.freePlanLimits?.adsEnabled !== false) ? "block" : "none";
+  }
 }
 
-/** Shows the paywall view — used when the user has no premium and no credits. */
+/** Shown when the user is actually blocked from an action — urgent framing. */
 function showPaywall() {
-  showView("paywall");
+  renderPricingView(true);
+}
+
+/** Shown when the user voluntarily opens the Pricing tab — neutral framing, works even with full access. */
+function showPricing() {
+  renderPricingView(false);
+}
+
+function renderPricingView(isBlocked) {
+  showView("pricing");
+  document.querySelectorAll("[data-nav-tab]").forEach((el) => el.classList.toggle("active", el.dataset.navTab === "pricing"));
 
   const balance = mktAccess?.credits ?? 0;
-  document.getElementById("paywall-message").textContent =
-    balance > 0
-      ? `You have ${balance} credits — not quite enough for this. Buy more, or go unlimited with Premium.`
-      : "The Marketing Agent runs on credits or a Premium plan. Get started with either below.";
+  const message = isBlocked
+    ? (balance > 0
+        ? `You have 🪙 ${balance.toLocaleString()} coins — not quite enough for this. Buy more, or go unlimited with Premium.`
+        : "You're out of coins. Get more below, or go unlimited with Premium.")
+    : "Manage your plan, your coin balance, and see what each AI feature costs.";
+  document.getElementById("paywall-message").textContent = message;
 
-  renderCurrencyToggle(); // also refreshes credit packs + premium button label for the current currency
+  document.getElementById("pricing-plan-badge").textContent = mktAccess?.plan === "premium" ? "Premium ✨" : "Free";
+  document.getElementById("pricing-credit-balance").textContent = mktAccess?.plan === "premium" ? "Unlimited" : `🪙 ${balance.toLocaleString()} Coins`;
+
+  if (mktAccess?.costs) {
+    document.getElementById("pricing-costs-list").innerHTML = Object.entries(mktAccess.costs)
+      .map(([key, cost]) => `<div class="settings-row"><div class="sr-label">${key.replace(/([A-Z])/g, " $1").replace(/^./, (c) => c.toUpperCase())}</div><span>🪙 ${cost}</span></div>`)
+      .join("");
+  }
+
+  renderCreditPacks();
 }
 
 /** Reads ?connected=facebook or ?connect_error=... left by the backend's OAuth callback redirect. */
@@ -380,27 +373,21 @@ function openCampaignForm() {
 }
 
 /** Upgrades to Premium via Flutterwave — same flow as settings.html's upgrade button. */
-function upgradeToPremiumFromMarketing() {
-  const currency = mktCurrency || (mktAccess && mktAccess.currency) || FLW_CONFIG.defaultCurrency || "USD";
-  const price =
-    (mktAccess?.premiumMonthly && mktAccess.premiumMonthly[currency]) ||
-    (currency === "NGN" ? FLW_CONFIG.premiumPriceNGN : FLW_CONFIG.premiumPriceUSD);
-
-  if (!price || price <= 0) {
-    showNotification("error", `Premium is not available in ${currency} right now.`);
-    return;
-  }
+function upgradeToPremiumFromMarketing(planType = "monthly") {
+  const priceUSD = planType === "yearly"
+    ? (mktAccess?.premiumYearlyUSD || FLW_CONFIG.premiumPriceUSD * 8)
+    : (mktAccess?.premiumMonthlyUSD || FLW_CONFIG.premiumPriceUSD);
 
   FlutterwaveCheckout({
     public_key: FLW_CONFIG.publicKey,
     tx_ref: "vivy-" + mktUser.uid + "-" + Date.now(),
-    amount: price,
-    currency,
+    amount: priceUSD,
+    currency: FLW_CONFIG.currency,
     payment_options: "card,mobilemoney,ussd",
     customer: { email: mktUser.email, name: mktUser.displayName || "Vivy User" },
-    meta: { uid: mktUser.uid, purchaseType: "premium", planType: "monthly" },
+    meta: { uid: mktUser.uid, planType },
     customizations: {
-      title: "Vivy AI Premium",
+      title: `Vivy AI Premium (${planType === "yearly" ? "Yearly" : "Monthly"})`,
       description: "Unlimited campaigns, credits, and connected accounts",
       logo: "../icons/icon-192.png"
     },
@@ -410,12 +397,7 @@ function upgradeToPremiumFromMarketing() {
         const res = await fetch(FLW_CONFIG.verifyEndpoint, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            transaction_id: response.transaction_id,
-            uid: mktUser.uid,
-            purchaseType: "premium",
-            planType: "monthly"
-          })
+          body: JSON.stringify({ transaction_id: response.transaction_id, uid: mktUser.uid, purchaseType: "premium", planType })
         });
         const data = await res.json().catch(() => ({}));
         if (!data.success) throw new Error(data.message || "Could not verify payment.");
@@ -680,4 +662,4 @@ async function runGrowthCoach() {
   } finally {
     btn.disabled = false;
   }
-}
+         }
