@@ -116,26 +116,50 @@ function renderLimitFields() {
 function renderPriceFields() {
   document.getElementById("prices-card").innerHTML = `
     <div class="admin-row">
-      <label>Premium Monthly (USD)</label>
+      <label>Premium Monthly — USD ($)</label>
       <input
         class="form-input"
         type="number"
         min="0"
         step="0.01"
-        id="price-monthly"
-        value="${pricing.premiumMonthlyUSD ?? 0}"
+        id="price-monthly-usd"
+        value="${pricing.premiumMonthly?.USD ?? 0}"
       >
     </div>
 
     <div class="admin-row">
-      <label>Premium Yearly (USD)</label>
+      <label>Premium Monthly — NGN (₦)</label>
+      <input
+        class="form-input"
+        type="number"
+        min="0"
+        step="1"
+        id="price-monthly-ngn"
+        value="${pricing.premiumMonthly?.NGN ?? 0}"
+      >
+    </div>
+
+    <div class="admin-row">
+      <label>Premium Yearly — USD ($)</label>
       <input
         class="form-input"
         type="number"
         min="0"
         step="0.01"
-        id="price-yearly"
-        value="${pricing.premiumYearlyUSD ?? 0}"
+        id="price-yearly-usd"
+        value="${pricing.premiumYearly?.USD ?? 0}"
+      >
+    </div>
+
+    <div class="admin-row">
+      <label>Premium Yearly — NGN (₦)</label>
+      <input
+        class="form-input"
+        type="number"
+        min="0"
+        step="1"
+        id="price-yearly-ngn"
+        value="${pricing.premiumYearly?.NGN ?? 0}"
       >
     </div>
   `;
@@ -168,8 +192,18 @@ function renderPacks() {
           min="0"
           step="0.01"
           placeholder="price USD"
-          value="${p.priceUSD ?? 0}"
+          value="${p.price?.USD ?? 0}"
           data-pack-field="priceUSD"
+        >
+
+        <input
+          class="form-input"
+          type="number"
+          min="0"
+          step="1"
+          placeholder="price NGN"
+          value="${p.price?.NGN ?? 0}"
+          data-pack-field="priceNGN"
         >
 
         <button
@@ -187,7 +221,7 @@ function addPackRow() {
   pricing.creditPacks.push({
     id: `pack_${Date.now()}`,
     credits: 100,
-    priceUSD: 1
+    price: { USD: 1, NGN: 1500 }
   });
 
   renderPacks();
@@ -274,16 +308,21 @@ async function savePricing() {
         : raw;
   });
 
-  // Premium pricing in USD
-  pricing.premiumMonthlyUSD =
-    parseFloat(document.getElementById("price-monthly").value) || 0;
+  // Premium pricing — both currencies
+  pricing.premiumMonthly = {
+    USD: parseFloat(document.getElementById("price-monthly-usd").value) || 0,
+    NGN: parseFloat(document.getElementById("price-monthly-ngn").value) || 0
+  };
 
-  pricing.premiumYearlyUSD =
-    parseFloat(document.getElementById("price-yearly").value) || 0;
+  pricing.premiumYearly = {
+    USD: parseFloat(document.getElementById("price-yearly-usd").value) || 0,
+    NGN: parseFloat(document.getElementById("price-yearly-ngn").value) || 0
+  };
 
   // Credit packs
   document.querySelectorAll("[data-pack-index]").forEach((row) => {
     const i = parseInt(row.dataset.packIndex, 10);
+    if (!pricing.creditPacks[i].price) pricing.creditPacks[i].price = {};
 
     row.querySelectorAll("[data-pack-field]").forEach((el) => {
       const field = el.dataset.packField;
@@ -291,8 +330,9 @@ async function savePricing() {
       if (field === "id") {
         pricing.creditPacks[i][field] = el.value;
       } else if (field === "priceUSD") {
-        pricing.creditPacks[i][field] =
-          parseFloat(el.value) || 0;
+        pricing.creditPacks[i].price.USD = parseFloat(el.value) || 0;
+      } else if (field === "priceNGN") {
+        pricing.creditPacks[i].price.NGN = parseFloat(el.value) || 0;
       } else {
         pricing.creditPacks[i][field] =
           parseInt(el.value, 10) || 0;
