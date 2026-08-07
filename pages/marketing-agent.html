@@ -65,12 +65,13 @@
       <span class="material-icons" style="font-size:40px;color:var(--primary);">workspace_premium</span>
       <h2 class="mt-8 mb-8">Unlock the Marketing Agent</h2>
       <p class="text-sm text-muted" id="paywall-message">The Marketing Agent runs on credits or a Premium plan.</p>
+      <div id="currency-toggle" style="margin-top:8px;"></div>
     </div>
 
     <div class="card mb-16">
       <h3 class="mb-8">Go Premium</h3>
       <p class="text-sm text-muted mb-16">Unlimited campaigns, unlimited connected accounts, unlimited AI generation.</p>
-      <button class="btn btn-primary" style="width:100%;" onclick="upgradeToPremiumFromMarketing()">Upgrade to Premium</button>
+      <button class="btn btn-primary" style="width:100%;" onclick="upgradeToPremiumFromMarketing()" id="premium-upgrade-btn">Upgrade to Premium</button>
     </div>
 
     <div class="card">
