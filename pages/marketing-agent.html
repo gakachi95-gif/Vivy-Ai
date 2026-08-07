@@ -24,9 +24,11 @@
   <!-- Tabs -->
   <div class="mkt-tabs">
     <div class="mkt-tab active" data-nav-tab="dashboard" onclick="showView('dashboard')"><span class="material-icons" style="font-size:16px;">dashboard</span> Dashboard</div>
+    <div class="mkt-tab" data-nav-tab="autopilot" onclick="openAutoPilot()"><span class="material-icons" style="font-size:16px;">bolt</span> AutoPilot</div>
     <div class="mkt-tab" data-nav-tab="calendar" onclick="showView('calendar')"><span class="material-icons" style="font-size:16px;">calendar_month</span> Calendar</div>
     <div class="mkt-tab" data-nav-tab="accounts" onclick="showView('accounts')"><span class="material-icons" style="font-size:16px;">link</span> Accounts</div>
     <div class="mkt-tab" data-nav-tab="analytics" onclick="showView('analytics')"><span class="material-icons" style="font-size:16px;">bar_chart</span> Analytics</div>
+    <div class="mkt-tab" data-nav-tab="pricing" onclick="showPricing()"><span class="material-icons" style="font-size:16px;">payments</span> Pricing</div>
   </div>
 
   <!-- =========================  AUTOPILOT  ========================= -->
@@ -60,18 +62,34 @@
   </div>
 
   <!-- =========================  PAYWALL  ========================= -->
-  <div data-view="paywall" style="display:none;">
+  <div data-view="pricing" style="display:none;">
     <div class="card text-center mb-16">
       <span class="material-icons" style="font-size:40px;color:var(--primary);">workspace_premium</span>
-      <h2 class="mt-8 mb-8">Unlock the Marketing Agent</h2>
+      <h2 class="mt-8 mb-8">Pricing & Credits</h2>
       <p class="text-sm text-muted" id="paywall-message">The Marketing Agent runs on credits or a Premium plan.</p>
-      <div id="currency-toggle" style="margin-top:8px;"></div>
+    </div>
+
+    <div class="card mb-16">
+      <div class="settings-row">
+        <div class="sr-label"><span class="material-icons">workspace_premium</span> Current Plan</div>
+        <span id="pricing-plan-badge" class="post-status status-active">…</span>
+      </div>
+      <div class="settings-row">
+        <div class="sr-label"><span class="material-icons">stars</span> Credit Balance</div>
+        <span id="pricing-credit-balance">…</span>
+      </div>
     </div>
 
     <div class="card mb-16">
       <h3 class="mb-8">Go Premium</h3>
       <p class="text-sm text-muted mb-16">Unlimited campaigns, unlimited connected accounts, unlimited AI generation.</p>
-      <button class="btn btn-primary" style="width:100%;" onclick="upgradeToPremiumFromMarketing()" id="premium-upgrade-btn">Upgrade to Premium</button>
+      <button class="btn btn-primary mb-8" style="width:100%;" onclick="upgradeToPremiumFromMarketing('monthly')">Upgrade — Monthly</button>
+      <button class="btn btn-outline" style="width:100%;" onclick="upgradeToPremiumFromMarketing('yearly')">Upgrade — Yearly (best value)</button>
+    </div>
+
+    <div class="card mb-16">
+      <h3 class="mb-8">Credit Costs</h3>
+      <div id="pricing-costs-list"></div>
     </div>
 
     <div class="card">
@@ -83,11 +101,15 @@
 
   <!-- =========================  DASHBOARD  ========================= -->
   <div data-view="dashboard">
-    <button class="btn btn-primary btn-new-campaign" onclick="openCampaignForm()">
-      <span class="material-icons">add_circle</span> New Campaign
+    <div class="ad-banner" id="mkt-ad-banner" style="display:none;">
+      📢 Sponsored — Upgrade to <strong>Premium</strong> to remove ads &amp; unlock unlimited AI.
+    </div>
+
+    <button class="btn btn-primary btn-new-campaign" onclick="openAutoPilot()">
+      <span class="material-icons">bolt</span> Launch AutoPilot
     </button>
-    <button class="btn btn-outline btn-new-campaign" onclick="openAutoPilot()">
-      <span class="material-icons">bolt</span> AutoPilot — Just Tell Me What to Promote
+    <button class="btn btn-outline btn-new-campaign" onclick="openCampaignForm()">
+      <span class="material-icons">add_circle</span> Manual Campaign
     </button>
 
     <div class="mkt-stat-grid">
@@ -316,4 +338,4 @@
 <script src="../js/analytics.js"></script>
 <script src="../js/marketing-agent.js"></script>
 </body>
-</html>
+  </html>
