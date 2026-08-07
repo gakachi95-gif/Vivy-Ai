@@ -21,7 +21,11 @@ function requireCredits(featureKey) {
       }
 
       if (!canAfford(profile, cost)) {
-        return sendError(res, `Not enough credits — this costs ${cost}, you have ${profile.credits || 0}. Upgrade to Premium or buy more credits.`, 402, {
+        const balance = profile.credits || 0;
+        const message = balance === 0
+          ? "You're out of coins."
+          : `You're out of coins for this — it costs 🪙 ${cost}, you have 🪙 ${balance}.`;
+        return sendError(res, message, 402, {
           code: "INSUFFICIENT_CREDITS",
           required: cost,
           balance: profile.credits || 0
