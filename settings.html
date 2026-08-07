@@ -48,9 +48,33 @@
       <div class="sr-label"><span class="material-icons">workspace_premium</span> Current Plan</div>
       <span class="plan-badge plan-free" id="plan-display">Free</span>
     </div>
-    <button class="btn btn-primary mt-16" onclick="upgradeToPremium()">
-      <span class="material-icons">bolt</span> Upgrade to Premium
+    <p class="text-sm text-muted mb-8" id="premium-expiry-note" style="display:none;"></p>
+    <button class="btn btn-primary mt-16" onclick="upgradeToPremium('monthly')">
+      <span class="material-icons">bolt</span> Upgrade to Premium — Monthly
     </button>
+    <button class="btn btn-outline mt-8" onclick="upgradeToPremium('yearly')">
+      <span class="material-icons">star</span> Upgrade to Premium — Yearly (best value)
+    </button>
+  </div>
+
+  <h3 class="mb-8">Refer Friends</h3>
+  <div class="card mb-16">
+    <p class="text-sm text-muted mb-8">Invite 5 friends for 200 credits. Invite 50 for a month of Premium.</p>
+    <div class="settings-row">
+      <div class="sr-label"><span class="material-icons">group</span> Friends Referred</div>
+      <span id="referral-count">0</span>
+    </div>
+    <div class="form-input mb-8" id="referral-link" style="user-select:all;word-break:break-all;">Loading…</div>
+    <button class="btn btn-outline" style="width:100%;" onclick="copyReferralLink()">
+      <span class="material-icons">content_copy</span> Copy Referral Link
+    </button>
+  </div>
+
+  <div class="card mb-16">
+    <div class="settings-row" style="cursor:pointer;" onclick="location.href='pages/admin.html'">
+      <div class="sr-label"><span class="material-icons">admin_panel_settings</span> Admin Dashboard</div>
+      <span class="material-icons">chevron_right</span>
+    </div>
   </div>
 
   <h3 class="mb-8">Data</h3>
@@ -122,6 +146,21 @@
 
     // Language preference (stored locally; hook up to i18n later)
     document.getElementById("lang-select").value = localStorage.getItem("vivy_lang") || "en";
+
+    // Real plan status (accounts for expiry — the raw client profile above
+    // doesn't), live pricing, and referral progress.
+    settingsPricing = await fetchSettingsPricing();
+    if (settingsPricing) {
+      document.getElementById("plan-display").textContent = settingsPricing.plan === "premium" ? "Premium" : "Free";
+      document.getElementById("plan-display").className = `plan-badge ${settingsPricing.plan === "premium" ? "plan-premium" : "plan-free"}`;
+      if (settingsPricing.plan === "premium" && settingsPricing.premiumUntil) {
+        const until = new Date(settingsPricing.premiumUntil).toLocaleDateString();
+        const note = document.getElementById("premium-expiry-note");
+        note.textContent = `Renews/expires ${until}`;
+        note.style.display = "block";
+      }
+    }
+    await loadReferralInfo();
   })();
 
   document.getElementById("dark-toggle").addEventListener("change", (e) => {
@@ -133,21 +172,36 @@
     showNotification("success", "Language preference saved.");
   });
 
-  function upgradeToPremium() {
+  let settingsPricing = null;
+
+  async function fetchSettingsPricing() {
+    const token = await settingsUser.getIdToken();
+    const res = await fetch(`${VIVY_API_BASE}/marketing/access`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const data = await res.json().catch(() => ({}));
+    return res.ok && data.success ? data : null;
+  }
+
+  function upgradeToPremium(planType = "monthly") {
+    const amount = planType === "yearly"
+      ? (settingsPricing?.premiumYearlyNGN || FLW_CONFIG.premiumPriceNGN * 10)
+      : (settingsPricing?.premiumMonthlyNGN || FLW_CONFIG.premiumPriceNGN);
+
     FlutterwaveCheckout({
       public_key: FLW_CONFIG.publicKey,
       tx_ref: "vivy-" + settingsUser.uid + "-" + Date.now(),
-      amount: FLW_CONFIG.premiumPriceNGN,
+      amount,
       currency: FLW_CONFIG.currency,
       payment_options: "card,mobilemoney,ussd",
       customer: {
         email: settingsUser.email,
         name: settingsUser.displayName || "Vivy User"
       },
-      meta: { uid: settingsUser.uid }, // read by the webhook backup path
+      meta: { uid: settingsUser.uid, planType }, // read by the webhook backup path
       customizations: {
-        title: "Vivy AI Premium",
-        description: "Unlock unlimited AI messages, no daily limit",
+        title: `Vivy AI Premium (${planType === "yearly" ? "Yearly" : "Monthly"})`,
+        description: "Unlock unlimited AI messages, credits, and marketing campaigns",
         logo: "icons/icon-192.png"
       },
       callback: async function (response) {
@@ -159,7 +213,8 @@
             body: JSON.stringify({
               transaction_id: response.transaction_id,
               uid: settingsUser.uid,
-              expectedAmount: FLW_CONFIG.premiumPriceNGN
+              purchaseType: "premium",
+              planType
             })
           });
           const data = await res.json().catch(() => ({}));
@@ -178,6 +233,29 @@
         // Checkout closed without completing — no action needed.
       }
     });
+  }
+
+  async function loadReferralInfo() {
+    try {
+      const token = await settingsUser.getIdToken();
+      const res = await fetch(`${VIVY_API_BASE}/referrals/me`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) throw new Error(data.message);
+
+      document.getElementById("referral-count").textContent = data.referralCount;
+      document.getElementById("referral-link").textContent = data.referralLink || `Code: ${data.referralCode} (set FRONTEND_URL on the backend to get a full link)`;
+    } catch (e) {
+      document.getElementById("referral-link").textContent = "Couldn't load your referral link.";
+    }
+  }
+
+  function copyReferralLink() {
+    const text = document.getElementById("referral-link").textContent;
+    navigator.clipboard.writeText(text)
+      .then(() => showNotification("success", "Referral link copied!"))
+      .catch(() => showNotification("error", "Couldn't copy — select and copy the text manually."));
   }
 
   async function clearHistory() {
