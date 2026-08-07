@@ -357,7 +357,125 @@
   padding: 24px;
 }
 
-/* -----------------------------  AI SUGGESTIONS  ----------------------------- */
+/* -----------------------------  COIN STORE  ----------------------------- */
+.coin-pack-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.coin-pack-card {
+  position: relative;
+  background: var(--surface-solid);
+  border: 1.5px solid var(--border);
+  border-radius: 18px;
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  cursor: pointer;
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+.coin-pack-card:active {
+  transform: scale(0.98);
+}
+.coin-pack-card.featured {
+  border-color: var(--primary);
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.12), rgba(139, 92, 246, 0.03));
+}
+.coin-pack-badge {
+  position: absolute;
+  top: -10px;
+  right: 14px;
+  background: linear-gradient(135deg, var(--primary), var(--accent));
+  color: #fff;
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 20px;
+}
+.coin-pack-icon {
+  font-size: 30px;
+  flex-shrink: 0;
+  filter: drop-shadow(0 0 6px rgba(139, 92, 246, 0.5));
+}
+.coin-pack-info {
+  flex: 1;
+  min-width: 0;
+}
+.coin-pack-amount {
+  font-size: 1.15rem;
+  font-weight: 800;
+}
+.coin-pack-bonus {
+  display: inline-block;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--success);
+  background: rgba(52, 211, 153, 0.14);
+  padding: 2px 8px;
+  border-radius: 20px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+.coin-pack-desc {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+.coin-pack-buy {
+  flex-shrink: 0;
+  text-align: center;
+}
+.coin-pack-price {
+  font-weight: 800;
+  font-size: 1rem;
+  margin-bottom: 4px;
+}
+.coin-pack-buy-btn {
+  padding: 8px 16px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--primary), var(--primary-2));
+  color: #fff;
+  border: none;
+  font-weight: 700;
+  font-size: 0.78rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+/* -----------------------------  COIN BALANCE  ----------------------------- */
+.coin-balance-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface-solid);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 6px 14px;
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+/* -----------------------------  AD PLACEHOLDER  ----------------------------- */
+.ad-placeholder {
+  background: var(--surface-solid);
+  border: 1px dashed var(--border);
+  border-radius: 14px;
+  padding: 12px 14px;
+  text-align: center;
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  margin-bottom: 16px;
+}
+.ad-placeholder a {
+  color: var(--primary);
+  font-weight: 700;
+}
+
+
 .suggestion-card {
   display: flex;
   align-items: flex-start;
@@ -368,4 +486,4 @@
   color: var(--warning);
   flex-shrink: 0;
   margin-top: 2px;
-}
+     }
