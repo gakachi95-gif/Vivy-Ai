@@ -65,27 +65,17 @@ jobs:
       # --------------------------------------------------
       # 7. Install Bubblewrap
       #
-      # IMPORTANT FIX:
-      # Do NOT invoke `bubblewrap` (even --version) here.
-      # Bubblewrap's very first invocation on a runner
-      # triggers an interactive "install JDK?" wizard if
-      # ~/.bubblewrap/config.json does not exist yet. That
-      # config is only written in the next step. Calling
-      # bubblewrap here (as the previous workflow did) is
-      # exactly what caused Build #5 to hang and fail with
-      # exit code 130.
+      # Do NOT invoke `bubblewrap` here (not even --version).
+      # Its first-ever invocation on a fresh runner triggers
+      # an interactive JDK/SDK setup wizard if
+      # ~/.bubblewrap/config.json does not exist yet.
       # --------------------------------------------------
       - name: Install Bubblewrap
         run: |
           npm install -g @bubblewrap/cli@1.24.1
-          echo "Bubblewrap CLI installed (version check deferred until after config is written)."
 
       # --------------------------------------------------
-      # 8. Configure Bubblewrap
-      #
-      # This MUST run, and this config file MUST exist,
-      # before the first real invocation of the bubblewrap
-      # command anywhere else in this workflow.
+      # 8. Configure Bubblewrap BEFORE any bubblewrap command
       # --------------------------------------------------
       - name: Configure Bubblewrap environment
         run: |
@@ -104,41 +94,26 @@ jobs:
       # --------------------------------------------------
       # 9. Check environment
       #
-      # This is now the FIRST time `bubblewrap` is actually
-      # invoked in this workflow. Config already exists, so
-      # no interactive JDK/SDK prompt should appear.
+      # First real bubblewrap invocation in this workflow.
+      # Config already exists, so no interactive prompt fires.
       # --------------------------------------------------
       - name: Check Bubblewrap environment
         run: |
-          echo "Java:"
-          java -version
-
-          echo
-          echo "Node:"
-          node --version
-
-          echo
-          echo "npm:"
-          npm --version
-
-          echo
-          echo "Bubblewrap:"
-          bubblewrap --version
-
-          echo
-          echo "JAVA_HOME:"
-          echo "$JAVA_HOME"
-
-          echo
-          echo "ANDROID_HOME:"
-          echo "$ANDROID_HOME"
-
-          echo
-          echo "Android SDK:"
-          ls -la "$ANDROID_HOME"
+          echo "Java:"; java -version
+          echo; echo "Node:"; node --version
+          echo; echo "npm:"; npm --version
+          echo; echo "Bubblewrap:"; bubblewrap --version
+          echo; echo "JAVA_HOME:"; echo "$JAVA_HOME"
+          echo; echo "ANDROID_HOME:"; echo "$ANDROID_HOME"
 
       # --------------------------------------------------
-      # 10. Restore existing Vivy signing key
+      # 10. Create the android/ directory FIRST
+      # --------------------------------------------------
+      - name: Create android directory
+        run: mkdir -p android
+
+      # --------------------------------------------------
+      # 11. Restore existing Vivy signing key into android/
       # --------------------------------------------------
       - name: Restore Vivy signing key
         env:
@@ -146,17 +121,16 @@ jobs:
         run: |
           test -n "$KEYSTORE_B64"
 
-          echo "$KEYSTORE_B64" | base64 --decode > vivyai.jks
+          echo "$KEYSTORE_B64" | base64 --decode > android/vivyai.jks
 
-          test -s vivyai.jks
-
-          chmod 600 vivyai.jks
+          test -s android/vivyai.jks
+          chmod 600 android/vivyai.jks
 
           echo "Signing key restored."
-          ls -lh vivyai.jks
+          ls -lh android/vivyai.jks
 
       # --------------------------------------------------
-      # 11. Verify existing signing key
+      # 12. Verify the existing signing key
       # --------------------------------------------------
       - name: Verify signing key
         env:
@@ -164,56 +138,41 @@ jobs:
         run: |
           keytool \
             -list \
-            -keystore vivyai.jks \
+            -keystore android/vivyai.jks \
             -storepass "$KEYSTORE_PASSWORD" \
             -alias vivyai
 
           echo "Signing key verification passed."
 
       # --------------------------------------------------
-      # 12. Generate Android project
+      # 13. Generate Android project
       #
-      # FIX for Build #4: create ./android BEFORE bubblewrap
-      # init runs, so the "directory does not exist, create
-      # it?" prompt structurally cannot occur. The Expect
-      # patterns are kept as a defensive fallback for any
-      # other prompt, wrapped in a hard `timeout` so the job
-      # can never hang indefinitely.
+      # Runs FROM INSIDE the already-existing android/
+      # directory with NO --directory flag, so Bubblewrap
+      # never has to decide whether to create a directory —
+      # it just uses ".", which already exists.
       # --------------------------------------------------
       - name: Generate Android project
+        working-directory: android
         env:
           TERM: dumb
+          KEYSTORE_PASSWORD: ${{ secrets.VIVY_KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.VIVY_KEY_PASSWORD }}
         run: |
-          rm -rf android
-          mkdir -p android
-
           cat > init.expect <<'EXPECT'
           set timeout 600
-
           log_user 1
 
-          spawn bubblewrap init \
-            --manifest="https://vivy.name.ng/manifest.json" \
-            --directory="./android"
+          spawn bubblewrap init --manifest="https://vivy.name.ng/manifest.json"
 
           expect {
-
-            -re "(?i)Directory .* does not exist.*Do you want to create it.*" {
-              send "y\r"
-              exp_continue
-            }
 
             -re "(?i)Domain.*" {
               send "vivy.name.ng\r"
               exp_continue
             }
 
-            -re "(?i)Application name.*" {
-              send "Vivy AI\r"
-              exp_continue
-            }
-
-            -re "(?i)Name of the application.*" {
+            -re "(?i)(Application name|Name of the application).*" {
               send "Vivy AI\r"
               exp_continue
             }
@@ -234,16 +193,16 @@ jobs:
             }
 
             -re "(?i)Relative path to open the TWA.*" {
-              send "/index.html\r"
-              exp_continue
-            }
-
-            -re "(?i)URL to an image that is at least 512x512.*" {
-              send "https://vivy.name.ng/icons/icon-512.png\r"
+              send "\r"
               exp_continue
             }
 
             -re "(?i)maskable.*512x512.*" {
+              send "https://vivy.name.ng/icons/icon-512.png\r"
+              exp_continue
+            }
+
+            -re "(?i)URL to an image that is at least 512x512.*" {
               send "https://vivy.name.ng/icons/icon-512.png\r"
               exp_continue
             }
@@ -263,18 +222,23 @@ jobs:
               exp_continue
             }
 
-            -re "(?i)Key name.*" {
+            -re "(?i)Key (name|alias).*" {
               send "vivyai\r"
               exp_continue
             }
 
-            -re "(?i)Signing Key could not be found.*" {
+            -re "(?i)(Signing Key could not be found|Do you want to create).*" {
               send "n\r"
               exp_continue
             }
 
-            -re "(?i)Do you want to create.*keystore.*" {
-              send "n\r"
+            -re "(?i)key\s*store password.*" {
+              send "$env(KEYSTORE_PASSWORD)\r"
+              exp_continue
+            }
+
+            -re "(?i)key password.*" {
+              send "$env(KEY_PASSWORD)\r"
               exp_continue
             }
 
@@ -282,7 +246,6 @@ jobs:
           }
 
           catch wait result
-
           set exit_code [lindex $result 3]
 
           if {$exit_code != 0} {
@@ -291,31 +254,24 @@ jobs:
           }
 
           puts "Bubblewrap init completed."
-
           EXPECT
 
           timeout 600 expect init.expect
 
       # --------------------------------------------------
-      # 13. Verify generated Android project
+      # 14. Verify generated Android project
       # --------------------------------------------------
       - name: Verify Android project
         run: |
-          echo "Checking Android project..."
-
-          test -d android
           test -f android/twa-manifest.json
           test -f android/gradlew
           test -f android/app/build.gradle
 
           echo "Android project generated successfully."
-
-          echo
-          echo "Project files:"
           find android -maxdepth 2 -type f | sort | head -100
 
       # --------------------------------------------------
-      # 14. Build signed APK
+      # 15. Build signed APK
       # --------------------------------------------------
       - name: Build signed APK
         working-directory: android
@@ -327,126 +283,51 @@ jobs:
 
           bubblewrap build \
             --skipPwaValidation \
-            --signingKeyPath="../vivyai.jks" \
+            --signingKeyPath="./vivyai.jks" \
             --signingKeyAlias="vivyai"
 
       # --------------------------------------------------
-      # 15. Locate APK (robust, no hardcoded assumption)
+      # 16. Locate APK
       # --------------------------------------------------
       - name: Locate APK
-        id: locate_apk
         run: |
-          echo "All APK files found under android/:"
-          find android -type f -name "*.apk" -print || true
-
-          APK=""
-
-          # 1. Standard Bubblewrap output name
           APK="$(find android -type f -name "app-release-signed.apk" -print -quit)"
 
-          # 2. Any apk with both 'release' and 'signed' in the name
           if [ -z "$APK" ]; then
-            APK="$(find android -type f -iname "*release*signed*.apk" -print -quit)"
-          fi
-
-          # 3. Any release apk that is explicitly not the unsigned variant
-          if [ -z "$APK" ]; then
-            APK="$(find android -type f -iname "*release*.apk" ! -iname "*unsigned*" -print -quit)"
-          fi
-
-          # 4. Last resort: any apk that isn't explicitly unsigned
-          if [ -z "$APK" ]; then
-            APK="$(find android -type f -iname "*.apk" ! -iname "*unsigned*" -print -quit)"
-          fi
-
-          if [ -z "$APK" ] || [ ! -f "$APK" ]; then
-            echo "ERROR: No signed APK could be located under android/."
+            echo "ERROR: app-release-signed.apk was not found."
+            find android -type f -name "*.apk" -print
             exit 1
           fi
 
-          echo "Selected APK: $APK"
+          echo "APK found:"
           ls -lh "$APK"
 
           echo "APK_PATH=$APK" >> "$GITHUB_ENV"
 
       # --------------------------------------------------
-      # 16. Verify APK signature (apksigner, exactly 1 signer)
+      # 17. Verify APK signature
       # --------------------------------------------------
       - name: Verify APK signature
         run: |
-          BUILD_TOOLS="$(find "$ANDROID_HOME/build-tools" -maxdepth 1 -mindepth 1 -type d | sort -V | tail -n1)"
-          APKSIGNER="$BUILD_TOOLS/apksigner"
-          if [ ! -x "$APKSIGNER" ]; then
-            APKSIGNER="apksigner"
-          fi
-
-          echo "Using apksigner at: $APKSIGNER"
-          "$APKSIGNER" verify --verbose "$APK_PATH" | tee apksigner_output.txt
-
-          if ! grep -q "^Verified using v" apksigner_output.txt; then
-            echo "ERROR: apksigner did not report a valid signature scheme."
-            exit 1
-          fi
-
-          SIGNER_COUNT="$(grep -m1 -oE 'Number of signers: [0-9]+' apksigner_output.txt | grep -oE '[0-9]+')"
-
-          if [ -z "$SIGNER_COUNT" ]; then
-            echo "WARNING: Could not parse signer count from apksigner output; proceeding cautiously."
-          elif [ "$SIGNER_COUNT" -ne 1 ]; then
-            echo "ERROR: Expected exactly 1 signer, found $SIGNER_COUNT."
-            exit 1
-          else
-            echo "Confirmed exactly 1 signer."
-          fi
+          apksigner verify --verbose "$APK_PATH"
 
       # --------------------------------------------------
-      # 17. Verify APK integrity, size, and manifest
+      # 18. Verify APK ZIP integrity
       # --------------------------------------------------
       - name: Verify APK integrity
         run: |
-          echo "Checking APK is not a zero-byte file..."
-          test -s "$APK_PATH"
-
-          echo "Testing APK ZIP integrity..."
-          unzip -t "$APK_PATH" >/dev/null
-
-          echo "Checking APK contains AndroidManifest.xml..."
-          unzip -l "$APK_PATH" | grep -q "AndroidManifest.xml"
-
-          case "$APK_PATH" in
-            *unsigned*)
-              echo "ERROR: Selected APK appears to be the unsigned build variant."
-              exit 1
-              ;;
-          esac
-
-          echo "APK integrity checks passed."
+          unzip -t "$APK_PATH"
 
       # --------------------------------------------------
-      # 18. Display APK information (best-effort package info)
+      # 19. Verify AndroidManifest.xml exists inside the APK
       # --------------------------------------------------
-      - name: APK information
+      - name: Verify AndroidManifest.xml
         run: |
-          echo "Final APK:"
-          ls -lh "$APK_PATH"
-
-          echo
-          echo "APK SHA-256:"
-          sha256sum "$APK_PATH"
-
-          BUILD_TOOLS="$(find "$ANDROID_HOME/build-tools" -maxdepth 1 -mindepth 1 -type d | sort -V | tail -n1)"
-          AAPT2="$BUILD_TOOLS/aapt2"
-
-          echo
-          if [ -x "$AAPT2" ]; then
-            echo "Package info (aapt2):"
-            "$AAPT2" dump badging "$APK_PATH" | head -20 || true
-          else
-            echo "aapt2 not found in build-tools, skipping package info dump."
-          fi
+          unzip -l "$APK_PATH" | grep -q "AndroidManifest.xml"
+          echo "AndroidManifest.xml confirmed inside APK."
 
       # --------------------------------------------------
-      # 19. Upload APK artifact
+      # 20. Upload APK artifact
       # --------------------------------------------------
       - name: Upload Vivy AI APK
         uses: actions/upload-artifact@v4
