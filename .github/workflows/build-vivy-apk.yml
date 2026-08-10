@@ -1,4 +1,4 @@
-herename: Build Vivy AI APK
+name: Build Vivy AI APK
 
 on:
   workflow_dispatch:
