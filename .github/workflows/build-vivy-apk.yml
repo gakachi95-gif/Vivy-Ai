@@ -1,4 +1,4 @@
-name: Build Vivy AI APK
+herename: Build Vivy AI APK
 
 on:
   workflow_dispatch:
@@ -13,30 +13,43 @@ jobs:
 
     steps:
 
-      # 1. Checkout
+      # ============================================================
+      # 1. CHECKOUT
+      # ============================================================
       - name: Checkout Vivy AI
         uses: actions/checkout@v4
 
-      # 2. Java 17
+      # ============================================================
+      # 2. JAVA 17
+      # ============================================================
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      # 3. Node 20
+      # ============================================================
+      # 3. NODE 20
+      # ============================================================
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      # 4. Android SDK
+      # ============================================================
+      # 4. ANDROID SDK
+      # ============================================================
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      # 5. Install Android SDK components
+      # ============================================================
+      # 5. ANDROID SDK COMPONENTS
+      # ============================================================
       - name: Install Android SDK components
+        shell: bash
         run: |
+          set -e
+
           yes | sdkmanager --licenses >/dev/null 2>&1 || true
 
           sdkmanager \
@@ -44,281 +57,378 @@ jobs:
             "platforms;android-35" \
             "build-tools;35.0.0"
 
-      # 6. Expect
+          echo "Android SDK ready."
+
+      # ============================================================
+      # 6. EXPECT
+      # ============================================================
       - name: Install Expect
+        shell: bash
         run: |
+          set -e
+
           sudo apt-get update
           sudo apt-get install -y expect
 
-      # 7. Install Bubblewrap 1.24.1
+          echo "Expect installed."
+
+      # ============================================================
+      # 7. INSTALL BUBBLEWRAP 1.24.1
+      # ============================================================
       - name: Install Bubblewrap
+        shell: bash
         run: |
+          set -e
+
           npm install -g @bubblewrap/cli@1.24.1
 
-      # 8. Configure Bubblewrap
+          echo "Bubblewrap installed."
+
+      # ============================================================
+      # 8. CONFIGURE BUBBLEWRAP
+      # ============================================================
       - name: Configure Bubblewrap
+        shell: bash
         run: |
           set -e
 
           mkdir -p "$HOME/.bubblewrap"
 
-          printf '%s\n' \
-            '{' \
-            "  \"jdkPath\": \"$JAVA_HOME\"," \
-            "  \"androidSdkPath\": \"$ANDROID_HOME\"" \
-            '}' \
-            > "$HOME/.bubblewrap/config.json"
+          cat > "$HOME/.bubblewrap/config.json" <<EOF
+          {
+            "jdkPath": "$JAVA_HOME",
+            "androidSdkPath": "$ANDROID_HOME"
+          }
+          EOF
 
-          echo "HOME=$HOME"
-          echo "JAVA_HOME=$JAVA_HOME"
-          echo "ANDROID_HOME=$ANDROID_HOME"
-
-          echo "Bubblewrap config:"
+          echo "Bubblewrap configuration:"
           cat "$HOME/.bubblewrap/config.json"
 
-          test -x "$JAVA_HOME/bin/java"
-          test -x "$JAVA_HOME/bin/jarsigner"
-          test -x "$ANDROID_HOME/platform-tools/adb"
-
-      # 9. Restore existing signing key
-      - name: Restore Vivy signing key
-        env:
-          KEYSTORE_B64: ${{ secrets.VIVY_KEYSTORE_BASE64 }}
+      # ============================================================
+      # 9. VERIFY ENVIRONMENT
+      # ============================================================
+      - name: Verify build environment
+        shell: bash
         run: |
           set -e
 
-          test -n "$KEYSTORE_B64"
+          echo "======================================"
+          echo "JAVA"
+          echo "======================================"
+          java -version
 
-          printf '%s' "$KEYSTORE_B64" | base64 --decode > vivyai.jks
+          echo ""
+          echo "======================================"
+          echo "NODE"
+          echo "======================================"
+          node --version
 
-          test -s vivyai.jks
+          echo ""
+          echo "======================================"
+          echo "NPM"
+          echo "======================================"
+          npm --version
 
-          chmod 600 vivyai.jks
+          echo ""
+          echo "======================================"
+          echo "BUBBLEWRAP"
+          echo "======================================"
+          bubblewrap --version
 
-          echo "Signing key restored:"
-          ls -lh vivyai.jks
+          echo ""
+          echo "======================================"
+          echo "JAVA_HOME"
+          echo "======================================"
+          echo "$JAVA_HOME"
 
-      # 10. Verify signing key
-      - name: Verify signing key
-        env:
-          KEYSTORE_PASSWORD: ${{ secrets.VIVY_KEYSTORE_PASSWORD }}
+          echo ""
+          echo "======================================"
+          echo "ANDROID_HOME"
+          echo "======================================"
+          echo "$ANDROID_HOME"
+
+      # ============================================================
+      # 10. VERIFY LIVE VIVY MANIFEST
+      # ============================================================
+      - name: Verify Vivy manifest
+        shell: bash
         run: |
           set -e
 
-          keytool \
-            -list \
-            -keystore vivyai.jks \
-            -storepass "$KEYSTORE_PASSWORD" \
-            -alias vivyai
+          MANIFEST_URL="https://vivy.name.ng/manifest.json"
 
-          echo "Signing key verification PASSED."
+          echo "Downloading manifest:"
+          echo "$MANIFEST_URL"
 
-      # 11. Generate Android project
+          curl \
+            --fail \
+            --silent \
+            --show-error \
+            --location \
+            "$MANIFEST_URL" \
+            -o /tmp/vivy-manifest.json
+
+          echo ""
+          echo "Manifest:"
+          cat /tmp/vivy-manifest.json
+
+          echo ""
+          echo "Validating manifest..."
+
+          node <<'NODE'
+          const fs = require('fs');
+
+          const path = '/tmp/vivy-manifest.json';
+
+          const manifest = JSON.parse(
+            fs.readFileSync(path, 'utf8')
+          );
+
+          if (!manifest.name) {
+            throw new Error('Manifest missing name');
+          }
+
+          if (!manifest.start_url) {
+            throw new Error('Manifest missing start_url');
+          }
+
+          if (!Array.isArray(manifest.icons) || manifest.icons.length === 0) {
+            throw new Error('Manifest has no icons');
+          }
+
+          console.log('Manifest is valid.');
+          console.log('Name:', manifest.name);
+          console.log('Start URL:', manifest.start_url);
+          console.log('Icons:', manifest.icons.length);
+          NODE
+
+          echo "Manifest verification passed."
+
+      # ============================================================
+      # 11. PREPARE CLEAN ANDROID PROJECT DIRECTORY
       #
       # IMPORTANT:
-      # android/ is deliberately removed first.
+      # We deliberately DO NOT use:
       #
-      # Bubblewrap receives --directory=./android.
+      #   --directory="./android"
       #
-      # Expect handles:
-      # - JDK installation question
-      # - JDK path
-      # - Android SDK installation question
-      # - Android SDK path
-      # - Android directory creation
-      # - all normal TWA questions
-      # - existing signing key
+      # Bubblewrap will run from inside this directory and use "."
       #
-      - name: Generate Android project
-        env:
-          TERM: dumb
-          KEYSTORE_PASSWORD: ${{ secrets.VIVY_KEYSTORE_PASSWORD }}
-          KEY_PASSWORD: ${{ secrets.VIVY_KEY_PASSWORD }}
+      # The directory is created using an ABSOLUTE path.
+      # ============================================================
+      - name: Prepare clean Android project directory
+        shell: bash
         run: |
           set -e
 
-          rm -rf android
+          PROJECT_DIR="$GITHUB_WORKSPACE/android"
+
+          echo "Project directory:"
+          echo "$PROJECT_DIR"
+
+          rm -rf "$PROJECT_DIR"
+
+          mkdir -p "$PROJECT_DIR"
+
+          test -d "$PROJECT_DIR"
+
+          echo "Android directory successfully created."
+
+          ls -ld "$PROJECT_DIR"
+
+      # ============================================================
+      # 12. GENERATE BUBBLEWRAP PROJECT
+      #
+      # IMPORTANT:
+      # Bubblewrap is executed FROM the android directory.
+      #
+      # There is NO --directory option.
+      #
+      # This removes the directory-resolution problem completely.
+      # ============================================================
+      - name: Generate Android project
+        shell: bash
+        working-directory: android
+        env:
+          TERM: dumb
+        run: |
+          set -e
+
+          echo "Current directory:"
+          pwd
+
+          echo ""
+          echo "Directory contents before Bubblewrap:"
+          ls -la
 
           cat > init.expect <<'EXPECT'
           set timeout 900
           log_user 1
 
-          spawn bubblewrap init \
-            --manifest="https://vivy.name.ng/manifest.json" \
-            --directory="./android"
+          spawn bubblewrap init --manifest="https://vivy.name.ng/manifest.json"
 
           expect {
 
-            # ------------------------------------------------
-            # Bubblewrap dependency questions
-            # ------------------------------------------------
-
-            -re {(?i).*install.*JDK.*\([Rr]ecommended\).*} {
-              send "n\r"
-              exp_continue
-            }
-
-            -re {(?i).*Path to.*JDK.*} {
-              send "$env(JAVA_HOME)\r"
-              exp_continue
-            }
-
-            -re {(?i).*install.*Android SDK.*\([Rr]ecommended\).*} {
-              send "n\r"
-              exp_continue
-            }
-
-            -re {(?i).*Path to.*Android SDK.*} {
-              send "$env(ANDROID_HOME)\r"
-              exp_continue
-            }
-
-            # ------------------------------------------------
-            # Android output directory
-            # ------------------------------------------------
-
-            -re {(?i).*Directory.*does not exist.*} {
-              send "y\r"
-              exp_continue
-            }
-
-            -re {(?i).*Do you want to create.*directory.*} {
-              send "y\r"
-              exp_continue
-            }
-
-            # ------------------------------------------------
-            # Web manifest / TWA information
-            # ------------------------------------------------
-
-            -re {(?i).*Domain being opened in the TWA.*} {
+            # --------------------------------------------------------
+            # DOMAIN
+            # --------------------------------------------------------
+            -re {(?i).*Domain.*TWA.*} {
               send "vivy.name.ng\r"
               exp_continue
             }
 
+            # --------------------------------------------------------
+            # APPLICATION NAME
+            # --------------------------------------------------------
             -re {(?i).*Name of the application.*} {
               send "Vivy AI\r"
               exp_continue
             }
 
+            # --------------------------------------------------------
+            # LAUNCHER NAME
+            # --------------------------------------------------------
             -re {(?i).*Name to be shown on the Android Launcher.*} {
               send "Vivy AI\r"
               exp_continue
             }
 
-            -re {(?i).*Color to be used for the status bar.*} {
+            # --------------------------------------------------------
+            # STATUS BAR COLOR
+            # --------------------------------------------------------
+            -re {(?i).*status bar.*} {
               send "#8b5cf6\r"
               exp_continue
             }
 
-            -re {(?i).*Color to be used for the splash screen background.*} {
+            # --------------------------------------------------------
+            # SPLASH COLOR
+            # --------------------------------------------------------
+            -re {(?i).*splash screen background.*} {
               send "#0f0a1f\r"
               exp_continue
             }
 
+            # --------------------------------------------------------
+            # START URL
+            #
+            # The live manifest already uses ./index.html.
+            # --------------------------------------------------------
             -re {(?i).*Relative path to open the TWA.*} {
               send "/index.html\r"
               exp_continue
             }
 
-            -re {(?i).*URL to an image that is at least 512x512px.*maskable.*} {
-              send "https://vivy.name.ng/icons/icon-512.png\r"
-              exp_continue
-            }
-
+            # --------------------------------------------------------
+            # ICON
+            # --------------------------------------------------------
             -re {(?i).*URL to an image that is at least 512x512px.*} {
               send "https://vivy.name.ng/icons/icon-512.png\r"
               exp_continue
             }
 
+            # --------------------------------------------------------
+            # MASKABLE ICON
+            # --------------------------------------------------------
+            -re {(?i).*maskable.*} {
+              send "https://vivy.name.ng/icons/icon-512.png\r"
+              exp_continue
+            }
+
+            # --------------------------------------------------------
+            # SHORTCUTS
+            # --------------------------------------------------------
             -re {(?i).*Include app shortcuts.*} {
               send "n\r"
               exp_continue
             }
 
-            # ------------------------------------------------
-            # Package
-            # ------------------------------------------------
-
+            # --------------------------------------------------------
+            # PACKAGE NAME
+            # --------------------------------------------------------
             -re {(?i).*Android Package Name.*} {
               send "ng.name.vivy.twa\r"
               exp_continue
             }
 
-            # ------------------------------------------------
-            # Existing signing key
-            # ------------------------------------------------
-
-            -re {(?i).*Key store location.*} {
-              send "./vivyai.jks\r"
+            # --------------------------------------------------------
+            # ANY DIRECTORY QUESTION
+            #
+            # This is deliberately handled as a safety net.
+            # --------------------------------------------------------
+            -re {(?i).*Directory.*does not exist.*create.*} {
+              send "y\r"
               exp_continue
             }
 
+            # --------------------------------------------------------
+            # SIGNING KEY QUESTIONS
+            #
+            # We DON'T configure the existing key during init.
+            # It will be restored AFTER init.
+            # --------------------------------------------------------
             -re {(?i).*Location of the Signing Key.*} {
-              send "./vivyai.jks\r"
+              send "\r"
               exp_continue
             }
 
             -re {(?i).*Key name.*} {
-              send "vivyai\r"
+              send "\r"
               exp_continue
             }
 
-            -re {(?i).*Key alias.*} {
-              send "vivyai\r"
-              exp_continue
-            }
-
-            # ------------------------------------------------
-            # Never create a new key
-            # ------------------------------------------------
-
+            # --------------------------------------------------------
+            # KEYSTORE CREATION QUESTIONS
+            # --------------------------------------------------------
             -re {(?i).*Do you want to create.*keystore.*} {
               send "n\r"
               exp_continue
             }
 
-            -re {(?i).*Signing Key could not be found.*} {
+            -re {(?i).*Do you want to create one now.*} {
               send "n\r"
               exp_continue
             }
 
-            # ------------------------------------------------
-            # Password questions, if init asks them
-            # ------------------------------------------------
+            # --------------------------------------------------------
+            # FALLBACK CERTIFICATE QUESTIONS
+            # --------------------------------------------------------
+            -re {(?i).*First and Last names.*} {
+              send "Vivy AI\r"
+              exp_continue
+            }
 
+            -re {(?i).*Organizational Unit.*} {
+              send "Vivy AI\r"
+              exp_continue
+            }
+
+            -re {(?i).*Organization.*} {
+              send "Vivy AI\r"
+              exp_continue
+            }
+
+            -re {(?i).*Country.*2 letter code.*} {
+              send "NG\r"
+              exp_continue
+            }
+
+            # --------------------------------------------------------
+            # PASSWORD PROMPTS
+            # --------------------------------------------------------
             -re {(?i).*Password for the Key Store.*} {
-              send "$env(KEYSTORE_PASSWORD)\r"
+              send "\r"
               exp_continue
             }
 
             -re {(?i).*Password for the Key.*} {
-              send "$env(KEY_PASSWORD)\r"
+              send "\r"
               exp_continue
             }
 
-            -re {(?i).*key store password.*} {
-              send "$env(KEYSTORE_PASSWORD)\r"
-              exp_continue
-            }
-
-            -re {(?i).*key password.*} {
-              send "$env(KEY_PASSWORD)\r"
-              exp_continue
-            }
-
-            # ------------------------------------------------
-            # Final success
-            # ------------------------------------------------
-
-            -re {(?i).*Project generated successfully.*} {
-              exp_continue
-            }
-
-            -re {(?i).*Project generated.*} {
-              exp_continue
-            }
-
+            # --------------------------------------------------------
+            # EOF
+            # --------------------------------------------------------
             eof
           }
 
@@ -327,74 +437,182 @@ jobs:
           set exit_code [lindex $result 3]
 
           puts ""
-          puts "Bubblewrap init exit code: $exit_code"
+          puts "=========================================="
+          puts "BUBBLEWRAP INIT EXIT CODE: $exit_code"
+          puts "=========================================="
 
           if {$exit_code != 0} {
             puts "Bubblewrap initialization FAILED."
             exit $exit_code
           }
 
-          puts "Bubblewrap initialization PASSED."
+          puts "Bubblewrap initialization completed successfully."
           EXPECT
 
           expect init.expect
 
-      # 12. Verify Android project
+      # ============================================================
+      # 13. VERIFY GENERATED PROJECT
+      # ============================================================
       - name: Verify Android project
+        shell: bash
         run: |
           set -e
 
-          echo "Checking generated Android project..."
+          echo "Checking generated project..."
 
-          test -d android
           test -f android/twa-manifest.json
           test -f android/gradlew
           test -f android/app/build.gradle
 
           echo ""
-          echo "Android project generated successfully."
+          echo "SUCCESS: Android project generated."
 
           echo ""
-          echo "Important files:"
+          echo "Project files:"
           find android -maxdepth 2 -type f | sort | head -100
 
-      # 13. Build signed APK
+      # ============================================================
+      # 14. RESTORE EXISTING SIGNING KEY
       #
-      # Bubblewrap officially supports these CI environment
-      # variables and signing flags.
+      # IMPORTANT:
+      # This happens AFTER Bubblewrap init.
       #
+      # Therefore Bubblewrap gets a completely clean directory
+      # during initialization.
+      # ============================================================
+      - name: Restore Vivy signing key
+        shell: bash
+        env:
+          KEYSTORE_B64: ${{ secrets.VIVY_KEYSTORE_BASE64 }}
+        run: |
+          set -e
+
+          test -n "$KEYSTORE_B64"
+
+          printf '%s' "$KEYSTORE_B64" \
+            | base64 --decode \
+            > android/vivyai.jks
+
+          test -s android/vivyai.jks
+
+          chmod 600 android/vivyai.jks
+
+          echo "Existing Vivy signing key restored."
+
+          ls -lh android/vivyai.jks
+
+      # ============================================================
+      # 15. VERIFY EXISTING SIGNING KEY
+      # ============================================================
+      - name: Verify Vivy signing key
+        shell: bash
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.VIVY_KEYSTORE_PASSWORD }}
+        run: |
+          set -e
+
+          keytool \
+            -list \
+            -keystore android/vivyai.jks \
+            -storepass "$KEYSTORE_PASSWORD" \
+            -alias vivyai
+
+          echo "Signing key verification passed."
+
+      # ============================================================
+      # 16. PATCH twa-manifest.json WITH EXISTING SIGNING KEY
+      # ============================================================
+      - name: Configure signing in twa-manifest
+        shell: bash
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.VIVY_KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.VIVY_KEY_PASSWORD }}
+        run: |
+          set -e
+
+          node <<'NODE'
+          const fs = require('fs');
+
+          const file = 'android/twa-manifest.json';
+
+          const data = JSON.parse(
+            fs.readFileSync(file, 'utf8')
+          );
+
+          data.signingKey = {
+            path: "./vivyai.jks",
+            alias: "vivyai"
+          };
+
+          fs.writeFileSync(
+            file,
+            JSON.stringify(data, null, 2) + '\n'
+          );
+
+          console.log('Signing configuration added to twa-manifest.json');
+          NODE
+
+          echo ""
+          echo "Signing section:"
+          grep -A5 -B2 '"signingKey"' android/twa-manifest.json || true
+
+      # ============================================================
+      # 17. BUILD SIGNED APK
+      # ============================================================
       - name: Build signed APK
         working-directory: android
         env:
           BUBBLEWRAP_KEYSTORE_PASSWORD: ${{ secrets.VIVY_KEYSTORE_PASSWORD }}
           BUBBLEWRAP_KEY_PASSWORD: ${{ secrets.VIVY_KEY_PASSWORD }}
+        shell: bash
         run: |
           set -e
 
           chmod +x gradlew
 
+          echo "Starting Bubblewrap build..."
+
           bubblewrap build \
             --skipPwaValidation \
-            --signingKeyPath="../vivyai.jks" \
+            --signingKeyPath="./vivyai.jks" \
             --signingKeyAlias="vivyai"
 
-      # 14. Locate signed APK
+          echo ""
+          echo "Bubblewrap build completed."
+
+      # ============================================================
+      # 18. LOCATE SIGNED APK
+      # ============================================================
       - name: Locate signed APK
+        shell: bash
         run: |
           set -e
 
-          echo "Searching for generated APK..."
+          echo "Searching for APK files..."
 
-          find android -type f -name "*.apk" -print
+          find android \
+            -type f \
+            -name "*.apk" \
+            -print
 
-          APK="$(find android -type f -name "app-release-signed.apk" -print -quit)"
+          APK="$(find android \
+            -type f \
+            -name "app-release-signed.apk" \
+            -print \
+            -quit)"
 
           if [ -z "$APK" ]; then
             echo ""
             echo "ERROR: Signed APK was not found."
+
             echo ""
-            echo "Available APK files:"
-            find android -type f -name "*.apk" -print
+            echo "All APK files:"
+            find android \
+              -type f \
+              -name "*.apk" \
+              -print
+
             exit 1
           fi
 
@@ -404,38 +622,50 @@ jobs:
           fi
 
           echo ""
-          echo "SIGNED APK FOUND:"
+          echo "=========================================="
+          echo "SIGNED APK FOUND"
+          echo "=========================================="
+
           ls -lh "$APK"
 
           echo "APK_PATH=$APK" >> "$GITHUB_ENV"
 
-      # 15. Verify APK signature
+      # ============================================================
+      # 19. VERIFY APK SIGNATURE
+      # ============================================================
       - name: Verify APK signature
+        shell: bash
         run: |
           set -e
 
-          BUILD_TOOLS="$(find "$ANDROID_HOME/build-tools" \
-            -mindepth 1 \
-            -maxdepth 1 \
-            -type d \
-            | sort -V \
-            | tail -n 1)"
+          BUILD_TOOLS="$(
+            find "$ANDROID_HOME/build-tools" \
+              -mindepth 1 \
+              -maxdepth 1 \
+              -type d \
+              | sort -V \
+              | tail -n 1
+          )"
 
           APKSIGNER="$BUILD_TOOLS/apksigner"
 
           test -x "$APKSIGNER"
 
-          echo "Verifying APK:"
-          echo "$APK_PATH"
+          echo "Using apksigner:"
+          echo "$APKSIGNER"
 
           "$APKSIGNER" verify \
             --verbose \
             "$APK_PATH"
 
-          echo "APK SIGNATURE VERIFIED."
+          echo ""
+          echo "APK signature verification PASSED."
 
-      # 16. Verify APK integrity
+      # ============================================================
+      # 20. VERIFY APK INTEGRITY
+      # ============================================================
       - name: Verify APK integrity
+        shell: bash
         run: |
           set -e
 
@@ -449,12 +679,17 @@ jobs:
           echo "APK ZIP integrity PASSED."
           echo "AndroidManifest.xml FOUND."
 
-      # 17. Show APK information
+      # ============================================================
+      # 21. APK INFORMATION
+      # ============================================================
       - name: APK information
+        shell: bash
         run: |
-          echo "========================================"
-          echo "VIVY AI APK"
-          echo "========================================"
+          set -e
+
+          echo "=========================================="
+          echo "VIVY AI FINAL APK"
+          echo "=========================================="
 
           ls -lh "$APK_PATH"
 
@@ -462,7 +697,9 @@ jobs:
           echo "SHA-256:"
           sha256sum "$APK_PATH"
 
-      # 18. Upload APK
+      # ============================================================
+      # 22. UPLOAD APK
+      # ============================================================
       - name: Upload Vivy AI APK
         uses: actions/upload-artifact@v4
         with:
