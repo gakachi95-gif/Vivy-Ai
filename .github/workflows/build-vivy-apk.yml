@@ -17,102 +17,218 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '20'
 
-      - name: Setup Java
+      - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 17
+          java-version: '17'
 
-      - name: Install Bubblewrap
-        run: npm install -g @bubblewrap/cli
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
 
-      - name: Create TWA manifest
+      - name: Install Bubblewrap 1.24.1
         run: |
-          cat > twa-manifest.json <<'EOF'
-          {
-            "packageId": "ng.name.vivy.twa",
-            "host": "vivy.name.ng",
-            "name": "Vivy AI",
-            "launcherName": "Vivy AI",
-            "display": "standalone",
-            "orientation": "portrait",
-            "themeColor": "#8b5cf6",
-            "themeColorDark": "#8b5cf6",
-            "navigationColor": "#8b5cf6",
-            "navigationColorDark": "#8b5cf6",
-            "navigationDividerColor": "#8b5cf6",
-            "navigationDividerColorDark": "#8b5cf6",
-            "backgroundColor": "#0f0a1f",
-            "startUrl": "/index.html",
-            "iconUrl": "https://vivy.name.ng/icons/icon-512.png",
-            "maskableIconUrl": "https://vivy.name.ng/icons/icon-512.png",
-            "webManifestUrl": "https://vivy.name.ng/manifest.json",
-            "splashScreenFadeOutDuration": 300,
-            "appVersionName": "1.0.0",
-            "appVersionCode": 1,
-            "minSdkVersion": 23,
-            "enableNotifications": true,
-            "enableSiteSettingsShortcut": true,
-            "isMetaQuest": false,
-            "isChromeOSOnly": false,
-            "fallbackType": "customtabs",
-            "shortcuts": [],
-            "additionalTrustedOrigins": [],
-            "generatorApp": "bubblewrap-cli",
-            "fingerprints": []
-          }
-          EOF
+          npm install -g @bubblewrap/cli@1.24.1
+          bubblewrap --version
+
+      - name: Configure Bubblewrap
+        run: |
+          bubblewrap updateConfig \
+            --jdkPath="$JAVA_HOME" \
+            --androidSdkPath="$ANDROID_HOME"
+
+          bubblewrap doctor
+
+      - name: Restore Vivy AI signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.VIVY_KEYSTORE_BASE64 }}
+        run: |
+          mkdir -p android
+
+          echo "$KEYSTORE_B64" | base64 --decode > android/vivyai.jks
+
+          test -s android/vivyai.jks
+
+          echo "Signing key restored successfully."
 
       - name: Generate Android project
         run: |
           mkdir -p android
-          cd android
-          bubblewrap init --manifest ../twa-manifest.json --directory .
 
-      - name: Restore Vivy signing key
-        env:
-          KEYSTORE_B64: ${{ secrets.VIVY_KEYSTORE_BASE64 }}
+          cat > /tmp/init.expect <<'EXPECT'
+          set timeout 180
+
+          spawn bubblewrap init \
+            --manifest "https://vivy.name.ng/manifest.json" \
+            --directory "android"
+
+          expect {
+            -re "Do you want Bubblewrap to install JDK" {
+              send "n\r"
+              exp_continue
+            }
+
+            -re "Path to your existing JDK" {
+              send "$env(JAVA_HOME)\r"
+              exp_continue
+            }
+
+            -re "Do you want Bubblewrap to install.*Android SDK" {
+              send "n\r"
+              exp_continue
+            }
+
+            -re "Path to your existing Android SDK" {
+              send "$env(ANDROID_HOME)\r"
+              exp_continue
+            }
+
+            -re "Domain being opened in the TWA" {
+              send "vivy.name.ng\r"
+              exp_continue
+            }
+
+            -re "Name of the application" {
+              send "Vivy AI\r"
+              exp_continue
+            }
+
+            -re "Name to be shown on the Android Launcher" {
+              send "Vivy AI\r"
+              exp_continue
+            }
+
+            -re "Color to be used for the status bar" {
+              send "#8b5cf6\r"
+              exp_continue
+            }
+
+            -re "Color to be used for the splash screen background" {
+              send "#0f0a1f\r"
+              exp_continue
+            }
+
+            -re "Relative path to open the TWA" {
+              send "/index.html\r"
+              exp_continue
+            }
+
+            -re "URL to an image that is at least 512x512px" {
+              send "https://vivy.name.ng/icons/icon-512.png\r"
+              exp_continue
+            }
+
+            -re "URL to an image that is at least 512x512px.*maskable" {
+              send "https://vivy.name.ng/icons/icon-512.png\r"
+              exp_continue
+            }
+
+            -re "Include app shortcuts" {
+              send "n\r"
+              exp_continue
+            }
+
+            -re "Android Package Name.*Application ID" {
+              send "ng.name.vivy.twa\r"
+              exp_continue
+            }
+
+            -re "Location of the Signing Key" {
+              send "./vivyai.jks\r"
+              exp_continue
+            }
+
+            -re "Key name" {
+              send "vivyai\r"
+              exp_continue
+            }
+
+            -re "Signing Key could not be found" {
+              send "n\r"
+              exp_continue
+            }
+
+            -re "Do you want to enable.*notification" {
+              send "y\r"
+              exp_continue
+            }
+
+            -re "Do you want to enable.*Play Billing" {
+              send "n\r"
+              exp_continue
+            }
+
+            -re "Do you want to enable.*Location" {
+              send "n\r"
+              exp_continue
+            }
+
+            -re "Do you want to enable.*AppsFlyer" {
+              send "n\r"
+              exp_continue
+            }
+
+            eof
+          }
+
+          catch wait result
+
+          if {[lindex $result 3] != 0} {
+            puts "Bubblewrap init failed."
+            exit [lindex $result 3]
+          }
+          EXPECT
+
+          sudo apt-get update -y
+          sudo apt-get install -y expect
+
+          export JAVA_HOME="$JAVA_HOME"
+          export ANDROID_HOME="$ANDROID_HOME"
+
+          expect /tmp/init.expect
+
+      - name: Check generated project
         run: |
-          echo "$KEYSTORE_B64" | base64 --decode > android/vivyai.jks
-          test -s android/vivyai.jks
+          test -f android/twa-manifest.json
+          test -f android/gradlew
+          test -f android/app/build.gradle
 
-      - name: Build release APK
+          echo "Android project generated successfully."
+
+      - name: Make Gradle executable
+        run: |
+          chmod +x android/gradlew
+
+      - name: Build signed Vivy AI APK
         working-directory: android
-        run: |
-          chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon --stacktrace
-
-      - name: Sign APK
         env:
-          KEYSTORE_PASSWORD: ${{ secrets.VIVY_KEYSTORE_PASSWORD }}
-          KEY_PASSWORD: ${{ secrets.VIVY_KEY_PASSWORD }}
+          BUBBLEWRAP_KEYSTORE_PASSWORD: ${{ secrets.VIVY_KEYSTORE_PASSWORD }}
+          BUBBLEWRAP_KEY_PASSWORD: ${{ secrets.VIVY_KEY_PASSWORD }}
         run: |
-          APK=$(find android/app/build/outputs/apk/release -type f -name "*.apk" | head -1)
-
-          if [ -z "$APK" ]; then
-            echo "No release APK found."
-            exit 1
-          fi
-
-          $ANDROID_HOME/build-tools/35.0.0/apksigner sign \
-            --ks android/vivyai.jks \
-            --ks-key-alias vivyai \
-            --ks-pass env:KEYSTORE_PASSWORD \
-            --key-pass env:KEY_PASSWORD \
-            --out Vivy-AI-signed.apk \
-            "$APK"
+          bubblewrap build \
+            --skipPwaValidation \
+            --signingKeyPath="./vivyai.jks" \
+            --signingKeyAlias="vivyai"
 
       - name: Verify APK
         run: |
-          $ANDROID_HOME/build-tools/35.0.0/apksigner verify --verbose Vivy-AI-signed.apk
-          unzip -t Vivy-AI-signed.apk
-          ls -lh Vivy-AI-signed.apk
+          test -s android/app-release-signed.apk
 
-      - name: Upload APK
+          apksigner verify \
+            --verbose \
+            android/app-release-signed.apk
+
+          unzip -t android/app-release-signed.apk
+
+          ls -lh android/app-release-signed.apk
+
+      - name: Upload final APK
         uses: actions/upload-artifact@v4
         with:
-          name: Vivy-AI-signed-APK
-          path: Vivy-AI-signed.apk
+          name: Vivy-AI-installable-APK
+          path: android/app-release-signed.apk
           if-no-files-found: error
